@@ -31,7 +31,7 @@
                 </a>
             </nav>
             <div class="sidebar-footer">
-                <a href="/settings" class="nav-item">
+                <a href="settings.html" class="nav-item">
                     <i>⚙️</i> Settings
                 </a>
                 <a href="#" id="logoutBtn" class="nav-item">
@@ -83,20 +83,23 @@
             document.getElementById('logoutBtn').addEventListener('click', async (e) => {
                 e.preventDefault();
                 await window.api.logout();
-                window.location.href = '/login';
+                window.location.href = 'login.html';
             });
 
-            // Fetch basic stats (assuming backend has some endpoint or just mocking for now)
+            // Fetch stats directly from Supabase
             try {
-                const response = await window.api.fetchWithAuth('/api/jobs');
-                if (response.ok) {
-                    const jobs = await response.json();
-                    document.getElementById('statProjects').textContent = jobs.length;
-                    const activeJobs = jobs.filter(j => j.status === 'PROCESSING').length;
+                const { data: projects } = await window.api.supabase
+                    .from('projects')
+                    .select('id, status, completed_scenes')
+                    .eq('user_id', user.id);
+
+                if (projects) {
+                    document.getElementById('statProjects').textContent = projects.length;
+                    const activeJobs = projects.filter(j => j.status === 'PROCESSING').length;
                     document.getElementById('statActive').textContent = activeJobs;
-                    
+
                     let totalScenes = 0;
-                    jobs.forEach(j => { totalScenes += (j.completed_scenes || 0); });
+                    projects.forEach(j => { totalScenes += (j.completed_scenes || 0); });
                     document.getElementById('statScenes').textContent = totalScenes;
                 }
             } catch (err) {

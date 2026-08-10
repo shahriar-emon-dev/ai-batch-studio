@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="AI Batch Studio — Convert CSV scene data into AI-generated visuals and voiceovers using Google APIs">
     <title>AI Batch Studio — AI Video Production System</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="static/css/styles.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="static/js/api.js"></script>
 </head>
 <body>
 
@@ -645,7 +648,22 @@ DEFAULT_VIDEO_MODEL=veo-3.1-fast-generate-preview</pre>
     });
 </script>
 
-<script src="/static/js/app.js"></script>
+<script>
+    // Auth guard — redirect to login if not authenticated
+    (async () => {
+        if (!window.api || !window.api.supabase) {
+            window.location.href = 'login.html';
+            return;
+        }
+        const { data } = await window.api.supabase.auth.getSession();
+        if (!data.session) {
+            window.location.href = 'login.html';
+            return;
+        }
+    })();
+</script>
+
+<script src="static/js/app.js"></script>
 
 </body>
 </html>

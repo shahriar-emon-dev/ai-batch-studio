@@ -1,35 +1,130 @@
 /**
- * AI Batch Studio — Main Application Controller
+ * AI Batch Studio — Main Application Controller (Serverless Edition)
  *
- * Single-page application managing the complete production workflow:
- *   Upload → Review → Settings → Generate → Dashboard
+ * All data operations go directly to Supabase Postgres.
+ * CSV parsing, generation, and media processing happen client-side.
+ *
+ * Workflow: Upload → Review → Settings → Generate → Dashboard
  */
 
 // ============================================================
-// API Client
+// Supabase Data Layer (replaces old backend API calls)
 // ============================================================
-const API = {
-    async request(url, options = {}) {
-        const defaults = {
-            headers: { 'Content-Type': 'application/json' },
-        };
-        if (options.body && !(options.body instanceof FormData)) {
-            options.body = JSON.stringify(options.body);
-        } else if (options.body instanceof FormData) {
-            delete defaults.headers['Content-Type'];
-        }
-        const res = await fetch(url, { ...defaults, ...options });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: res.statusText }));
-            throw new Error(err.error || err.detail || `HTTP ${res.status}`);
-        }
-        return res.json();
+const DB = {
+    get supabase() {
+        return window.api?.supabase;
     },
-    get: (url) => API.request(url),
-    post: (url, body) => API.request(url, { method: 'POST', body }),
-    put: (url, body) => API.request(url, { method: 'PUT', body }),
-    del: (url) => API.request(url, { method: 'DELETE' }),
-    upload: (url, formData) => API.request(url, { method: 'POST', body: formData }),
+
+    async getUserId() {
+        const { data } = await this.supabase.auth.getSession();
+        return data?.session?.user?.id;
+    },
+
+    // --- Projects ---
+    async getProjects() {
+        const { data, error } = await this.supabase
+            .from('projects')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        return data || [];
+    },
+
+    async getProject(id) {
+        const { data, error } = await this.supabase
+            .from('projects')
+            .select('*')
+            .eq('id', id)
+            .single();
+        if (error) throw error;
+        return data;
+    },
+
+    async createProject(project) {
+        const userId = await this.getUserId();
+        const { data, error } = await this.supabase
+            .from('projects')
+            .insert({ ...project, user_id: userId })
+            .select()
+            .single();
+        if (error) throw error;
+        return data;
+    },
+
+    async updateProject(id, updates) {
+        const { data, error } = await this.supabase
+            .from('projects')
+            .update(updates)
+            .eq('id', id)
+            .select()
+            .single();
+        if (error) throw error;
+        return data;
+    },
+
+    async deleteProject(id) {
+        const { error } = await this.supabase
+            .from('projects')
+            .delete()
+            .eq('id', id);
+        if (error) throw error;
+    },
+
+    // --- Scenes ---
+    async getScenes(projectId) {
+        const { data, error } = await this.supabase
+            .from('scenes')
+            .select('*')
+            .eq('project_id', projectId)
+            .order('scene_number', { ascending: true });
+        if (error) throw error;
+        return data || [];
+    },
+
+    async createScenes(scenes) {
+        const userId = await this.getUserId();
+        const rows = scenes.map(s => ({ ...s, user_id: userId }));
+        const { data, error } = await this.supabase
+            .from('scenes')
+            .insert(rows)
+            .select();
+        if (error) throw error;
+        return data;
+    },
+
+    async updateScene(id, updates) {
+        const { data, error } = await this.supabase
+            .from('scenes')
+            .update(updates)
+            .eq('id', id)
+            .select()
+            .single();
+        if (error) throw error;
+        return data;
+    },
+
+    // --- User Settings ---
+    async getSettings() {
+        const userId = await this.getUserId();
+        const { data, error } = await this.supabase
+            .from('user_settings')
+            .select('*')
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (error) throw error;
+        return data;
+    },
+
+    async upsertSettings(settings) {
+        const userId = await this.getUserId();
+        const { data, error } = await this.supabase
+            .from('user_settings')
+            .upsert({ ...settings, user_id: userId }, { onConflict: 'user_id' })
+            .select()
+            .single();
+        if (error) throw error;
+        return data;
+    },
 };
 
 // ============================================================
@@ -109,6 +204,93 @@ const Router = {
 };
 
 // ============================================================
+// Client-Side CSV Parser (replaces backend /api/upload/csv)
+// ============================================================
+const CSVParser = {
+    parse(text) {
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 2) {
+            return { total_rows: 0, valid_rows: 0, invalid_rows: 0, errors: [{ row: 0, column: 'file', message: 'CSV must have a header row and at least one data row.' }], rows: [], detected_columns: [] };
+        }
+
+        const headers = this.parseLine(lines[0]).map(h => h.trim().toLowerCase());
+        const detected_columns = [...headers];
+
+        // Map common header variations
+        const colMap = {};
+        headers.forEach((h, i) => {
+            if (['scene', 'scene_number', 'scene_id', 'id', 'no', 'number', '#'].includes(h)) colMap.scene_number = i;
+            if (['visual_prompt', 'visual', 'image_prompt', 'prompt', 'image'].includes(h)) colMap.visual_prompt = i;
+            if (['voiceover_script', 'voiceover', 'script', 'narration', 'voice', 'text', 'tts'].includes(h)) colMap.voiceover_script = i;
+            if (['aspect_ratio', 'ratio', 'size'].includes(h)) colMap.aspect_ratio = i;
+            if (['filename', 'file', 'name', 'output'].includes(h)) colMap.filename = i;
+            if (['voice_name', 'voice_id'].includes(h)) colMap.voice = i;
+        });
+
+        const rows = [];
+        const errors = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const fields = this.parseLine(lines[i]);
+            if (fields.length === 0 || (fields.length === 1 && fields[0].trim() === '')) continue;
+
+            const row = {
+                id: colMap.scene_number !== undefined ? fields[colMap.scene_number]?.trim() : String(i),
+                visual_prompt: colMap.visual_prompt !== undefined ? fields[colMap.visual_prompt]?.trim() : '',
+                voiceover_script: colMap.voiceover_script !== undefined ? fields[colMap.voiceover_script]?.trim() : '',
+                aspect_ratio: colMap.aspect_ratio !== undefined ? fields[colMap.aspect_ratio]?.trim() : '16:9',
+                filename: colMap.filename !== undefined ? fields[colMap.filename]?.trim() : `scene_${i}`,
+                voice: colMap.voice !== undefined ? fields[colMap.voice]?.trim() : '',
+            };
+
+            if (!row.visual_prompt) {
+                errors.push({ row: i + 1, column: 'visual_prompt', message: 'Visual prompt is required' });
+            } else {
+                rows.push(row);
+            }
+        }
+
+        return {
+            total_rows: lines.length - 1,
+            valid_rows: rows.length,
+            invalid_rows: errors.length,
+            errors,
+            rows,
+            detected_columns,
+        };
+    },
+
+    parseLine(line) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            if (inQuotes) {
+                if (c === '"' && line[i + 1] === '"') {
+                    current += '"'; i++;
+                } else if (c === '"') {
+                    inQuotes = false;
+                } else {
+                    current += c;
+                }
+            } else {
+                if (c === '"') {
+                    inQuotes = true;
+                } else if (c === ',') {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += c;
+                }
+            }
+        }
+        result.push(current);
+        return result;
+    },
+};
+
+// ============================================================
 // CSV Upload
 // ============================================================
 const Upload = {
@@ -140,20 +322,18 @@ const Upload = {
             return;
         }
 
-        const formData = new FormData();
-        formData.append('file', file);
-
         try {
             document.getElementById('upload-status').classList.remove('hidden');
             document.getElementById('upload-status').innerHTML = '<p class="text-muted">Validating CSV...</p>';
 
-            const result = await API.upload('/api/upload/csv', formData);
+            const text = await file.text();
+            const result = CSVParser.parse(text);
             this.csvData = result;
             this.showValidation(result);
 
             if (result.rows.length > 0) {
                 App.csvRows = result.rows;
-                Toast.success(`CSV loaded: ${result.total_rows} scenes`);
+                Toast.success(`CSV loaded: ${result.valid_rows} scenes`);
             }
         } catch (err) {
             Toast.error(`Upload failed: ${err.message}`);
@@ -163,11 +343,9 @@ const Upload = {
 
     async loadSample() {
         try {
-            const res = await fetch('/static/sample.csv');
-            if (!res.ok) {
-                // Try to load from sample.csv relative path
-                Toast.info('Loading sample data...');
-            }
+            Toast.info('Loading sample data...');
+            const res = await fetch('static/sample.csv');
+            if (!res.ok) throw new Error('Sample not found');
             const blob = await res.blob();
             const file = new File([blob], 'sample.csv', { type: 'text/csv' });
             this.handleFile(file);
@@ -333,7 +511,7 @@ const Review = {
 };
 
 // ============================================================
-// Settings Panel
+// Settings Panel (client-side, no backend calls)
 // ============================================================
 const Settings = {
     voices: [],
@@ -342,59 +520,18 @@ const Settings = {
         document.getElementById('generation-mode')?.addEventListener('change', (e) => {
             this.updateModeUI(e.target.value);
         });
-        document.getElementById('voice-language')?.addEventListener('change', (e) => {
-            this.loadVoices(e.target.value);
-        });
     },
 
     async refresh() {
         try {
-            const models = await API.get('/api/settings/models');
-            if (document.getElementById('image-model')) {
-                document.getElementById('image-model').value = models.image_model;
-            }
-            if (document.getElementById('video-model')) {
-                document.getElementById('video-model').value = models.video_model;
-            }
-            // Set defaults
-            const d = models.defaults;
-            this.setVal('aspect-ratio', d.aspect_ratio);
-            this.setVal('concurrency', d.concurrency);
-            this.setVal('retry-count', d.retry_count);
-            this.setVal('voice-language', d.voice_language);
-            this.setVal('speech-speed', d.speech_speed);
-            this.setVal('speech-pitch', d.speech_pitch);
-            this.setVal('audio-format', d.audio_format);
-
-            this.updateSpeedLabel();
-            this.loadVoices(d.voice_language);
-
-            // Check FFmpeg
-            const ffmpeg = await API.get('/api/settings/ffmpeg');
-            const mergeSection = document.getElementById('merge-section');
-            if (mergeSection) {
-                if (!ffmpeg.available) {
-                    mergeSection.innerHTML += '<p class="text-xs text-warning mt-md">⚠ FFmpeg not found. Merge features disabled.</p>';
-                }
+            const userSettings = await DB.getSettings();
+            if (userSettings) {
+                this.setVal('aspect-ratio', userSettings.default_aspect_ratio);
+                this.setVal('generation-mode', userSettings.default_generation_mode);
+                if (userSettings.default_voice) this.setVal('voice-name', userSettings.default_voice);
             }
         } catch (err) {
             console.warn('Settings load failed:', err);
-        }
-    },
-
-    async loadVoices(language) {
-        try {
-            const data = await API.get(`/api/settings/voices?language=${language || ''}`);
-            this.voices = data.voices;
-            const select = document.getElementById('voice-name');
-            if (select) {
-                select.innerHTML = '<option value="">Auto (default)</option>';
-                data.voices.forEach(v => {
-                    select.innerHTML += `<option value="${v.name}">${v.name} (${v.gender})</option>`;
-                });
-            }
-        } catch (err) {
-            console.warn('Voice loading failed:', err);
         }
     },
 
@@ -419,8 +556,6 @@ const Settings = {
     getSettings() {
         return {
             mode: this.getVal('generation-mode', 'IMAGE_VOICE'),
-            image_model: this.getVal('image-model', ''),
-            video_model: this.getVal('video-model', ''),
             aspect_ratio: this.getVal('aspect-ratio', '16:9'),
             concurrency: parseInt(this.getVal('concurrency', '1')),
             retry_count: parseInt(this.getVal('retry-count', '3')),
@@ -433,8 +568,6 @@ const Settings = {
             enhance_prompts: document.getElementById('enhance-prompts')?.checked || false,
             enhance_scripts: document.getElementById('enhance-scripts')?.checked || false,
             merge_enabled: document.getElementById('merge-enabled')?.checked || false,
-            voiceover_timing: this.getVal('voiceover-timing', 'none'),
-            profile_id: parseInt(this.getVal('profile-select', '1')),
         };
     },
 
@@ -445,11 +578,15 @@ const Settings = {
 };
 
 // ============================================================
-// Generation Control
+// Client-Side Generation Engine
 // ============================================================
 const Generation = {
-    eventSource: null,
     isRunning: false,
+    isPaused: false,
+    currentProject: null,
+    queue: [],
+    concurrency: 1,
+    activeWorkers: 0,
 
     init() {
         document.getElementById('btn-start-batch')?.addEventListener('click', () => this.start());
@@ -460,32 +597,7 @@ const Generation = {
     },
 
     async refresh() {
-        // Check for resumable job
-        try {
-            const data = await API.get('/api/generation/check-resumable');
-            if (data.resumable) {
-                this.showResumeBanner(data.resumable);
-            }
-        } catch (err) {
-            console.warn('Resume check failed:', err);
-        }
-    },
-
-    showResumeBanner(info) {
-        const banner = document.getElementById('resume-banner');
-        if (!banner) return;
-        banner.classList.remove('hidden');
-        banner.innerHTML = `
-            <div class="resume-info">
-                <h3>📂 Previous Job Found</h3>
-                <div class="resume-stats">
-                    <span>✅ Completed: <strong>${info.completed}</strong></span>
-                    <span>❌ Failed: <strong>${info.failed}</strong></span>
-                    <span>⏳ Pending: <strong>${info.pending}</strong></span>
-                </div>
-            </div>
-            <button class="btn btn-primary" onclick="Generation.resume()">▶ Resume Job</button>
-        `;
+        // Nothing to check from backend anymore
     },
 
     async start() {
@@ -495,61 +607,234 @@ const Generation = {
         }
 
         const settings = Settings.getSettings();
+        const userSettings = await DB.getSettings();
+        const apiKey = userSettings?.google_api_key;
+
+        if (!apiKey) {
+            Toast.error('Google API Key not configured! Go to API Configuration first.');
+            Router.navigate('api-settings');
+            return;
+        }
 
         try {
-            const result = await API.post('/api/generation/start', {
-                job_name: `Batch ${new Date().toLocaleString()}`,
+            // 1. Create project in Supabase
+            const project = await DB.createProject({
+                name: `Batch ${new Date().toLocaleString()}`,
                 mode: settings.mode,
-                rows: App.csvRows,
-                settings: settings,
+                status: 'PROCESSING',
+                total_scenes: App.csvRows.length,
             });
 
-            App.currentJobId = result.job_id;
+            this.currentProject = project;
+            App.currentJobId = project.id;
+
+            // 2. Create scenes in Supabase
+            const scenesToInsert = App.csvRows.map((row, idx) => ({
+                project_id: project.id,
+                scene_number: row.id || String(idx + 1),
+                visual_prompt: row.visual_prompt,
+                voiceover_script: row.voiceover_script || '',
+                aspect_ratio: row.aspect_ratio || settings.aspect_ratio,
+                voice: row.voice || settings.voice_name,
+                overall_status: 'PENDING',
+            }));
+            const createdScenes = await DB.createScenes(scenesToInsert);
+
+            // 3. Start client-side processing
             this.isRunning = true;
-            Toast.success(`Job started: ${result.total_scenes} scenes`);
+            this.isPaused = false;
+            this.queue = [...createdScenes];
+            this.concurrency = settings.concurrency || 1;
+
+            Toast.success(`Job started: ${createdScenes.length} scenes`);
             this.updateControls();
-            this.connectSSE();
             Router.navigate('dashboard');
+
+            // 4. Process the queue
+            this.processQueue(apiKey, settings);
         } catch (err) {
             Toast.error(`Failed to start: ${err.message}`);
         }
     },
 
-    async pause() {
-        try {
-            await API.post('/api/generation/pause', {});
-            Toast.info('Job paused');
-            this.updateControls();
-        } catch (err) {
-            Toast.error(err.message);
+    async processQueue(apiKey, settings) {
+        const processScene = async (scene) => {
+            if (!this.isRunning) return;
+            while (this.isPaused) {
+                await new Promise(r => setTimeout(r, 500));
+                if (!this.isRunning) return;
+            }
+
+            try {
+                // Update status to PROCESSING
+                await DB.updateScene(scene.id, { overall_status: 'PROCESSING' });
+                Dashboard.addLogEntry({ type: 'scene_started', data: { scene_number: scene.scene_number } });
+
+                // --- VISUAL GENERATION ---
+                Dashboard.addLogEntry({ type: 'visual_started', data: { scene_number: scene.scene_number } });
+
+                const imageUrl = await this.generateImage(apiKey, scene.visual_prompt, scene.aspect_ratio);
+                await DB.updateScene(scene.id, { visual_url: imageUrl });
+                Dashboard.addLogEntry({ type: 'visual_completed', data: { scene_number: scene.scene_number } });
+
+                // --- VOICE GENERATION (if applicable) ---
+                if (settings.mode !== 'IMAGE_ONLY' && scene.voiceover_script) {
+                    Dashboard.addLogEntry({ type: 'voice_started', data: { scene_number: scene.scene_number } });
+
+                    const audioUrl = await this.generateVoice(apiKey, scene.voiceover_script, settings);
+                    await DB.updateScene(scene.id, { audio_url: audioUrl });
+                    Dashboard.addLogEntry({ type: 'voice_completed', data: { scene_number: scene.scene_number } });
+                }
+
+                // Mark scene as completed
+                await DB.updateScene(scene.id, { overall_status: 'COMPLETED' });
+                Dashboard.addLogEntry({ type: 'scene_completed', data: { scene_number: scene.scene_number } });
+
+                // Update project counters
+                App.completedScenes = (App.completedScenes || 0) + 1;
+                this.updateDashboardProgress();
+            } catch (err) {
+                await DB.updateScene(scene.id, {
+                    overall_status: 'FAILED',
+                    error_message: err.message,
+                });
+                Dashboard.addLogEntry({
+                    type: 'scene_failed',
+                    data: { scene_number: scene.scene_number, error: err.message },
+                });
+                App.failedScenes = (App.failedScenes || 0) + 1;
+                this.updateDashboardProgress();
+            }
+        };
+
+        // Run with concurrency
+        App.completedScenes = 0;
+        App.failedScenes = 0;
+
+        const chunks = [];
+        for (let i = 0; i < this.queue.length; i += this.concurrency) {
+            chunks.push(this.queue.slice(i, i + this.concurrency));
         }
+
+        for (const chunk of chunks) {
+            if (!this.isRunning) break;
+            await Promise.all(chunk.map(scene => processScene(scene)));
+        }
+
+        // Job finished
+        this.isRunning = false;
+        const finalStatus = App.failedScenes > 0 ? 'COMPLETED' : 'COMPLETED';
+        await DB.updateProject(App.currentJobId, {
+            status: finalStatus,
+            completed_scenes: App.completedScenes,
+            failed_scenes: App.failedScenes,
+        });
+        Toast.success('🎉 Batch generation finished!');
+        this.updateControls();
     },
 
-    async resume() {
-        try {
-            const result = await API.post('/api/generation/resume', {});
-            App.currentJobId = result.job_id || App.currentJobId;
-            this.isRunning = true;
-            Toast.success('Job resumed');
-            this.updateControls();
-            this.connectSSE();
-            Router.navigate('dashboard');
-        } catch (err) {
-            Toast.error(err.message);
+    async generateImage(apiKey, prompt, aspectRatio) {
+        // Call Google Gemini / Imagen API directly from the browser
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    instances: [{ prompt }],
+                    parameters: {
+                        sampleCount: 1,
+                        aspectRatio: aspectRatio || '16:9',
+                    },
+                }),
+            }
+        );
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `Image API error: ${response.status}`);
         }
+
+        const result = await response.json();
+        if (result.predictions && result.predictions[0]?.bytesBase64Encoded) {
+            // Return as data URL for now (can upload to Supabase Storage later)
+            return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+        }
+        throw new Error('No image generated');
     },
 
-    async cancel() {
+    async generateVoice(apiKey, text, settings) {
+        // Call Google Cloud TTS API directly from the browser
+        const response = await fetch(
+            `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    input: { text },
+                    voice: {
+                        languageCode: settings.language || 'en-US',
+                        name: settings.voice_name || '',
+                    },
+                    audioConfig: {
+                        audioEncoding: 'MP3',
+                        speakingRate: settings.speech_speed || 1.0,
+                        pitch: settings.speech_pitch || 0,
+                    },
+                }),
+            }
+        );
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `TTS API error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.audioContent) {
+            return `data:audio/mp3;base64,${result.audioContent}`;
+        }
+        throw new Error('No audio generated');
+    },
+
+    updateDashboardProgress() {
+        const total = this.queue.length;
+        const completed = App.completedScenes || 0;
+        const failed = App.failedScenes || 0;
+        const processing = this.isRunning ? Math.min(this.concurrency, total - completed - failed) : 0;
+        const pending = total - completed - failed - processing;
+        const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        Dashboard.updateProgress({
+            total,
+            completed,
+            failed,
+            processing,
+            pending,
+            progress,
+            visuals_completed: completed,
+            voices_completed: completed,
+        });
+    },
+
+    pause() {
+        this.isPaused = true;
+        Toast.info('Job paused');
+        this.updateControls();
+    },
+
+    resume() {
+        this.isPaused = false;
+        Toast.success('Job resumed');
+        this.updateControls();
+    },
+
+    cancel() {
         if (!confirm('Cancel the current job? Completed work will be preserved.')) return;
-        try {
-            await API.post('/api/generation/cancel', {});
-            this.isRunning = false;
-            Toast.warning('Job cancelled');
-            this.disconnectSSE();
-            this.updateControls();
-        } catch (err) {
-            Toast.error(err.message);
-        }
+        this.isRunning = false;
+        this.isPaused = false;
+        Toast.warning('Job cancelled');
+        this.updateControls();
     },
 
     async retryFailed() {
@@ -558,78 +843,36 @@ const Generation = {
             return;
         }
         try {
-            const result = await API.post('/api/generation/retry-failed', {
-                job_id: App.currentJobId,
-            });
+            const scenes = await DB.getScenes(App.currentJobId);
+            const failedScenes = scenes.filter(s => s.overall_status === 'FAILED');
+            if (failedScenes.length === 0) {
+                Toast.info('No failed scenes to retry.');
+                return;
+            }
+
+            // Reset failed scenes
+            for (const s of failedScenes) {
+                await DB.updateScene(s.id, { overall_status: 'PENDING', error_message: null });
+            }
+
+            const userSettings = await DB.getSettings();
+            const apiKey = userSettings?.google_api_key;
+            if (!apiKey) {
+                Toast.error('Google API Key not configured!');
+                return;
+            }
+
             this.isRunning = true;
-            Toast.success(`Retrying ${result.scenes_to_retry} failed scenes`);
-            this.connectSSE();
+            this.isPaused = false;
+            this.queue = failedScenes;
+            App.completedScenes = 0;
+            App.failedScenes = 0;
+
+            Toast.success(`Retrying ${failedScenes.length} failed scenes`);
             this.updateControls();
+            this.processQueue(apiKey, Settings.getSettings());
         } catch (err) {
             Toast.error(err.message);
-        }
-    },
-
-    connectSSE() {
-        this.disconnectSSE();
-        this.eventSource = new EventSource('/api/generation/events');
-
-        this.eventSource.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleEvent(data);
-            } catch (err) {
-                console.warn('SSE parse error:', err);
-            }
-        };
-
-        this.eventSource.onerror = () => {
-            console.warn('SSE connection error');
-        };
-    },
-
-    disconnectSSE() {
-        if (this.eventSource) {
-            this.eventSource.close();
-            this.eventSource = null;
-        }
-    },
-
-    handleEvent(event) {
-        switch (event.type) {
-            case 'progress_update':
-                Dashboard.updateProgress(event.data);
-                break;
-            case 'scene_started':
-            case 'visual_started':
-            case 'visual_completed':
-            case 'voice_started':
-            case 'voice_completed':
-            case 'scene_completed':
-            case 'scene_failed':
-                Dashboard.addLogEntry(event);
-                Dashboard.refreshSceneTable(event.data);
-                break;
-            case 'job_finished':
-                this.isRunning = false;
-                this.disconnectSSE();
-                this.updateControls();
-                Dashboard.updateProgress(event.data);
-                if (event.data.status === 'COMPLETED') {
-                    Toast.success('🎉 All scenes completed successfully!');
-                } else {
-                    Toast.warning(`Job finished with status: ${event.data.status}`);
-                }
-                break;
-            case 'job_error':
-                this.isRunning = false;
-                this.disconnectSSE();
-                Toast.error(`Job error: ${event.data.error}`);
-                break;
-            case 'quota_error':
-                Toast.error('⚠️ Quota/billing limit reached. Job paused.');
-                Dashboard.showQuotaBanner(event.data.message);
-                break;
         }
     },
 
@@ -640,7 +883,8 @@ const Generation = {
         const cancelBtn = document.getElementById('btn-cancel');
 
         if (startBtn) startBtn.disabled = this.isRunning;
-        if (pauseBtn) pauseBtn.classList.toggle('hidden', !this.isRunning);
+        if (pauseBtn) pauseBtn.classList.toggle('hidden', !this.isRunning || this.isPaused);
+        if (resumeBtn) resumeBtn.classList.toggle('hidden', !this.isPaused);
         if (cancelBtn) cancelBtn.classList.toggle('hidden', !this.isRunning);
     },
 };
@@ -652,14 +896,16 @@ const Dashboard = {
     async refresh() {
         if (!App.currentJobId) return;
         try {
-            const job = await API.get(`/api/jobs/${App.currentJobId}`);
-            this.updateProgress(job.progress || job);
+            const scenes = await DB.getScenes(App.currentJobId);
+            const completed = scenes.filter(s => s.overall_status === 'COMPLETED').length;
+            const failed = scenes.filter(s => s.overall_status === 'FAILED').length;
+            const processing = scenes.filter(s => s.overall_status === 'PROCESSING').length;
+            const pending = scenes.filter(s => s.overall_status === 'PENDING').length;
+            const total = scenes.length;
+            const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-            const logs = await API.get(`/api/jobs/${App.currentJobId}/logs?limit=100`);
-            this.renderLogs(logs.logs);
-
-            const scenes = await API.get(`/api/jobs/${App.currentJobId}/scenes?limit=50`);
-            this.renderSceneStatus(scenes.scenes);
+            this.updateProgress({ total, completed, failed, processing, pending, progress, visuals_completed: completed, voices_completed: completed });
+            this.renderSceneStatus(scenes);
         } catch (err) {
             console.warn('Dashboard refresh failed:', err);
         }
@@ -714,7 +960,7 @@ const Dashboard = {
         const log = document.getElementById('activity-log');
         if (!log) return;
 
-        const time = new Date(event.timestamp || Date.now()).toLocaleTimeString();
+        const time = new Date().toLocaleTimeString();
         const sceneNum = event.data.scene_number || '';
         let levelClass = '';
         let message = '';
@@ -756,18 +1002,6 @@ const Dashboard = {
         log.scrollTop = log.scrollHeight;
     },
 
-    renderLogs(logs) {
-        const container = document.getElementById('activity-log');
-        if (!container) return;
-        container.innerHTML = logs.map(l => `
-            <div class="log-entry ${l.level === 'SUCCESS' ? 'success' : l.level === 'ERROR' ? 'error' : l.level === 'WARNING' ? 'warning' : ''}">
-                <span class="log-time">${new Date(l.timestamp).toLocaleTimeString()}</span>
-                <span class="log-message">${l.message}</span>
-            </div>
-        `).join('');
-        container.scrollTop = container.scrollHeight;
-    },
-
     renderSceneStatus(scenes) {
         const container = document.getElementById('scene-status-body');
         if (!container) return;
@@ -776,23 +1010,14 @@ const Dashboard = {
             <tr>
                 <td class="font-mono">${s.scene_number}</td>
                 <td class="truncate" title="${Review.esc(s.visual_prompt)}">${Review.esc(s.visual_prompt?.substring(0, 50))}</td>
-                <td>${this.statusBadge(s.visual_status)}</td>
-                <td>${this.statusBadge(s.voice_status)}</td>
                 <td>${this.statusBadge(s.overall_status)}</td>
                 <td class="truncate text-xs text-danger">${s.error_message || ''}</td>
                 <td>
-                    ${s.overall_status === 'FAILED' ? `<button class="btn btn-ghost btn-sm" onclick="Dashboard.retryScene(${s.id})">🔄</button>` : ''}
-                    ${s.overall_status === 'PENDING' ? `<button class="btn btn-ghost btn-sm" onclick="Dashboard.skipScene(${s.id})">⏭</button>` : ''}
+                    ${s.overall_status === 'FAILED' ? `<button class="btn btn-ghost btn-sm" onclick="Dashboard.retryScene('${s.id}')">🔄</button>` : ''}
+                    ${s.overall_status === 'PENDING' ? `<button class="btn btn-ghost btn-sm" onclick="Dashboard.skipScene('${s.id}')">⏭</button>` : ''}
                 </td>
             </tr>
         `).join('');
-    },
-
-    refreshSceneTable(data) {
-        // Light refresh when we get an SSE update
-        if (App.currentJobId) {
-            this.refresh();
-        }
     },
 
     statusBadge(status) {
@@ -801,18 +1026,13 @@ const Dashboard = {
         const labels = {
             'pending': '⏳ Pending',
             'processing': '🔄 Processing',
-            'visual_generating': '🎨 Generating',
-            'visual_completed': '✅ Visual Done',
-            'voice_generating': '🎤 Generating',
-            'voice_completed': '✅ Voice Done',
-            'merging': '🔀 Merging',
             'completed': '✅ Completed',
             'failed': '❌ Failed',
             'skipped': '⏭ Skipped',
         };
-        const cls = s.includes('completed') || s.includes('voice_completed') || s.includes('visual_completed') ? 'completed'
+        const cls = s.includes('completed') ? 'completed'
             : s.includes('fail') ? 'failed'
-            : s.includes('process') || s.includes('generating') || s.includes('merging') ? 'processing'
+            : s.includes('process') ? 'processing'
             : s === 'skipped' ? 'skipped'
             : 'pending';
         return `<span class="status-badge ${cls}"><span class="status-dot"></span>${labels[s] || status}</span>`;
@@ -820,7 +1040,7 @@ const Dashboard = {
 
     async retryScene(sceneId) {
         try {
-            await API.post(`/api/jobs/${App.currentJobId}/scenes/${sceneId}/retry`, {});
+            await DB.updateScene(sceneId, { overall_status: 'PENDING', error_message: null });
             Toast.info('Scene reset for retry');
             this.refresh();
         } catch (err) {
@@ -830,7 +1050,7 @@ const Dashboard = {
 
     async skipScene(sceneId) {
         try {
-            await API.post(`/api/jobs/${App.currentJobId}/scenes/${sceneId}/skip`, {});
+            await DB.updateScene(sceneId, { overall_status: 'SKIPPED' });
             Toast.info('Scene skipped');
             this.refresh();
         } catch (err) {
@@ -853,90 +1073,100 @@ const Dashboard = {
 };
 
 // ============================================================
-// API Settings
+// API Settings (stores Google API key in Supabase user_settings)
 // ============================================================
 const ApiSettings = {
     async refresh() {
         try {
-            const data = await API.get('/api/settings/profiles');
-            this.renderProfiles(data);
+            const settings = await DB.getSettings();
+            this.renderSettings(settings);
         } catch (err) {
-            console.warn('Profile load failed:', err);
+            console.warn('Settings load failed:', err);
         }
     },
 
-    renderProfiles(data) {
+    renderSettings(settings) {
         const container = document.getElementById('profiles-list');
         if (!container) return;
 
-        const allProfiles = [
-            ...(data.env_profiles || []).map(p => ({ ...p, source: 'env' })),
-            ...(data.profiles || []).map(p => ({ ...p, source: 'db' })),
-        ];
+        const hasKey = settings?.google_api_key ? true : false;
 
-        if (allProfiles.length === 0) {
-            container.innerHTML = '<p class="text-muted text-center">No profiles configured. Add API keys to .env file.</p>';
-            return;
-        }
-
-        container.innerHTML = allProfiles.map(p => `
+        container.innerHTML = `
             <div class="card mb-md">
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between mb-md">
                     <div>
-                        <strong>${p.name}</strong>
-                        <span class="text-xs text-muted ml-sm">(${p.source === 'env' ? '.env file' : 'database'})</span>
+                        <strong>Google AI API Key</strong>
+                        <span class="text-xs text-muted ml-sm">(stored in Supabase)</span>
                     </div>
                     <div class="flex gap-sm items-center">
-                        <span class="profile-dot ${p.has_api_key ? '' : 'disconnected'}"></span>
-                        <span class="text-xs ${p.has_api_key ? 'text-success' : 'text-danger'}">
-                            ${p.has_api_key ? 'Configured' : 'No API Key'}
+                        <span class="profile-dot ${hasKey ? '' : 'disconnected'}"></span>
+                        <span class="text-xs ${hasKey ? 'text-success' : 'text-danger'}">
+                            ${hasKey ? 'Configured' : 'Not Set'}
                         </span>
                     </div>
                 </div>
-                <div class="mt-md">
-                    <button class="btn btn-secondary btn-sm" onclick="ApiSettings.testConnection(${p.id})">
+                <div class="form-group">
+                    <input type="password" id="google-api-key-input" class="form-input" 
+                           placeholder="Enter your Google AI API key..."
+                           value="${settings?.google_api_key || ''}">
+                </div>
+                <div class="flex gap-sm mt-md">
+                    <button class="btn btn-primary btn-sm" onclick="ApiSettings.saveKey()">
+                        💾 Save API Key
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="ApiSettings.testKey()">
                         🔌 Test Connection
                     </button>
                 </div>
-                <div id="test-result-${p.id}" class="mt-md hidden"></div>
+                <div id="api-test-result" class="mt-md hidden"></div>
             </div>
-        `).join('');
+        `;
     },
 
-    async testConnection(profileId) {
-        const resultEl = document.getElementById(`test-result-${profileId}`);
-        if (!resultEl) return;
-
-        resultEl.classList.remove('hidden');
-        resultEl.innerHTML = '<div class="test-item loading"><span class="test-icon">⏳</span> Testing...</div>';
+    async saveKey() {
+        const input = document.getElementById('google-api-key-input');
+        const key = input?.value?.trim();
+        if (!key) {
+            Toast.error('Please enter an API key');
+            return;
+        }
 
         try {
-            const result = await API.post(`/api/settings/profiles/${profileId}/test`, {});
+            await DB.upsertSettings({ google_api_key: key });
+            Toast.success('API key saved!');
+            this.refresh();
+        } catch (err) {
+            Toast.error(`Save failed: ${err.message}`);
+        }
+    },
 
-            resultEl.innerHTML = `
-                <div class="connection-test">
-                    <div class="test-item ${result.auth_ok ? 'pass' : 'fail'}">
-                        <span class="test-icon">${result.auth_ok ? '✅' : '❌'}</span>
-                        Authentication ${result.details?.auth || ''}
-                    </div>
-                    <div class="test-item ${result.image_ok ? 'pass' : 'fail'}">
-                        <span class="test-icon">${result.image_ok ? '✅' : '❌'}</span>
-                        Image Generation
-                    </div>
-                    <div class="test-item ${result.video_ok ? 'pass' : 'fail'}">
-                        <span class="test-icon">${result.video_ok ? '✅' : '❌'}</span>
-                        Video Generation
-                    </div>
-                    <div class="test-item ${result.tts_ok ? 'pass' : 'fail'}">
-                        <span class="test-icon">${result.tts_ok ? '✅' : '❌'}</span>
-                        Text-to-Speech
-                    </div>
-                </div>
-                ${result.errors?.length ? `<p class="text-xs text-warning mt-md">${result.errors.join('; ')}</p>` : ''}
-            `;
+    async testKey() {
+        const input = document.getElementById('google-api-key-input');
+        const key = input?.value?.trim();
+        if (!key) {
+            Toast.error('Please enter an API key first');
+            return;
+        }
 
-            if (result.success) Toast.success('Connection test passed!');
-            else Toast.warning('Some services unavailable');
+        const resultEl = document.getElementById('api-test-result');
+        if (!resultEl) return;
+        resultEl.classList.remove('hidden');
+        resultEl.innerHTML = '<div class="test-item loading"><span class="test-icon">⏳</span> Testing connection...</div>';
+
+        try {
+            // Test with a simple models list request
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`
+            );
+
+            if (response.ok) {
+                resultEl.innerHTML = '<div class="test-item pass"><span class="test-icon">✅</span> API Key is valid! Connection successful.</div>';
+                Toast.success('Connection test passed!');
+            } else {
+                const err = await response.json().catch(() => ({}));
+                resultEl.innerHTML = `<div class="test-item fail"><span class="test-icon">❌</span> ${err.error?.message || 'Invalid API key'}</div>`;
+                Toast.error('Connection test failed');
+            }
         } catch (err) {
             resultEl.innerHTML = `<div class="test-item fail"><span class="test-icon">❌</span> ${err.message}</div>`;
             Toast.error('Connection test failed');
@@ -950,6 +1180,8 @@ const ApiSettings = {
 const App = {
     csvRows: null,
     currentJobId: null,
+    completedScenes: 0,
+    failedScenes: 0,
 
     init() {
         Toast.init();

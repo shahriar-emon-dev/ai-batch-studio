@@ -83,7 +83,7 @@ class ApiClient {
         // Handle 401 Unauthorized globally
         if (response.status === 401) {
             await this.logout();
-            window.location.href = "/login";
+            window.location.href = "login.html";
         }
 
         return response;
@@ -121,7 +121,7 @@ class ApiClient {
      */
     async resetPasswordEmail(email) {
         return await this.supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: window.location.origin + '/reset-password',
+            redirectTo: window.location.origin + '/reset-password.html',
         });
     }
 
