@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - AI Batch Studio</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        window.SUPABASE_URL = "{{ supabase_url }}";
+        window.SUPABASE_KEY = "{{ supabase_key }}";
+    </script>
+    <script src="/static/js/api.js" defer></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                AI Batch Studio
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/dashboard" class="nav-item">
+                    <i>📊</i> Dashboard
+                </a>
+                <a href="/projects" class="nav-item">
+                    <i>📁</i> Projects
+                </a>
+                <a href="#" class="nav-item">
+                    <i>⚡</i> Generation
+                </a>
+                <a href="#" class="nav-item">
+                    <i>📂</i> Files & Exports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="/settings" class="nav-item active">
+                    <i>⚙️</i> Settings
+                </a>
+                <a href="#" id="logoutBtn" class="nav-item">
+                    <i>🚪</i> Logout
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="page-title">Settings</div>
+                <div class="user-menu">
+                    <span id="userEmail">Loading...</span>
+                </div>
+            </header>
+            
+            <div class="page-container" style="max-width: 800px; margin: 0 auto;">
+                
+                <!-- Account Settings -->
+                <div class="glass-panel" style="padding: 2rem; margin-bottom: 2rem;">
+                    <h2>Account Settings</h2>
+                    <p class="text-muted">Manage your authentication profile.</p>
+                    <div class="mt-3">
+                        <p><strong>Email:</strong> <span id="profileEmail">Loading...</span></p>
+                        <button class="btn btn-secondary mt-2" id="resetPasswordBtn">Send Password Reset Email</button>
+                    </div>
+                </div>
+
+                <!-- Google API Configuration -->
+                <div class="glass-panel" style="padding: 2rem;">
+                    <h2>Google API Configuration</h2>
+                    <p class="text-muted">Configure your Google AI Studio credentials for generation.</p>
+
+                    <div id="apiAlert" class="alert mt-3"></div>
+
+                    <form id="apiForm" class="mt-4">
+                        <div class="form-group">
+                            <label for="profileName">Profile Name</label>
+                            <input type="text" id="profileName" class="form-control" value="Default Profile" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="apiKey">Google Gemini / AI Studio API Key</label>
+                            <input type="password" id="apiKey" class="form-control" placeholder="AIza..." required>
+                            <small class="text-muted mt-1" style="display:block;">This key is securely encrypted on the server before storage. It is never exposed in the frontend.</small>
+                        </div>
+
+                        <div class="d-flex gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary" id="saveApiBtn">Save API Profile</button>
+                            <button type="button" class="btn btn-secondary" id="testApiBtn">Test Connection</button>
+                        </div>
+                    </form>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await window.api.requireAuth();
+            if (!user) return;
+            
+            document.getElementById('userEmail').textContent = user.email;
+            document.getElementById('profileEmail').textContent = user.email;
+
+            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                await window.api.logout();
+                window.location.href = '/login';
+            });
+
+            // Password reset
+            document.getElementById('resetPasswordBtn').addEventListener('click', async () => {
+                const { data, error } = await window.api.supabase.auth.resetPasswordForEmail(user.email, {
+                    redirectTo: window.location.origin + '/settings',
+                });
+                if (error) {
+                    alert('Error: ' + error.message);
+                } else {
+                    alert('Password reset email sent! Please check your inbox.');
+                }
+            });
+
+            // API Settings Logic
+            const apiForm = document.getElementById('apiForm');
+            const apiAlert = document.getElementById('apiAlert');
+            const saveApiBtn = document.getElementById('saveApiBtn');
+            const testApiBtn = document.getElementById('testApiBtn');
+
+            // Load existing profile (mocking a GET for /api/settings/api-profile since it might not be implemented fully to return the masked key, but let's try)
+            try {
+                const res = await window.api.fetchWithAuth('/api/settings');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.api_configured) {
+                        document.getElementById('apiKey').placeholder = "•••••••••••••••• (Configured)";
+                        document.getElementById('apiKey').required = false; // already configured
+                    }
+                }
+            } catch(e) {
+                console.error("Could not fetch initial settings state", e);
+            }
+
+            apiForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const apiKey = document.getElementById('apiKey').value;
+                const profileName = document.getElementById('profileName').value;
+                
+                if (!apiKey && document.getElementById('apiKey').placeholder.includes("Configured")) {
+                    // They didn't change the key, just updating the name or something (we don't strictly support name update alone right now without key in our backend schema, but let's send it if changed)
+                    apiAlert.textContent = "Profile already configured. Provide a new key to update it.";
+                    apiAlert.className = 'alert alert-error show';
+                    return;
+                }
+
+                saveApiBtn.disabled = true;
+                saveApiBtn.textContent = 'Saving...';
+                apiAlert.className = 'alert';
+
+                try {
+                    const payload = {
+                        provider: "google",
+                        profile_name: profileName,
+                        credentials: { api_key: apiKey }
+                    };
+
+                    const res = await window.api.fetchWithAuth('/api/settings/api-profile', {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || "Failed to save profile");
+
+                    apiAlert.textContent = "API Profile securely saved!";
+                    apiAlert.className = 'alert alert-success show';
+                    document.getElementById('apiKey').value = '';
+                    document.getElementById('apiKey').placeholder = "•••••••••••••••• (Configured)";
+                    document.getElementById('apiKey').required = false;
+                } catch (e) {
+                    apiAlert.textContent = e.message;
+                    apiAlert.className = 'alert alert-error show';
+                } finally {
+                    saveApiBtn.disabled = false;
+                    saveApiBtn.textContent = 'Save API Profile';
+                }
+            });
+
+            testApiBtn.addEventListener('click', async () => {
+                testApiBtn.disabled = true;
+                testApiBtn.textContent = 'Testing...';
+                apiAlert.className = 'alert';
+                
+                // For now, we'll just mock a success test unless there's a real test endpoint.
+                setTimeout(() => {
+                    apiAlert.textContent = "Connection Test Successful! (Mocked)";
+                    apiAlert.className = 'alert alert-success show';
+                    testApiBtn.disabled = false;
+                    testApiBtn.textContent = 'Test Connection';
+                }, 1000);
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projects - AI Batch Studio</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        window.SUPABASE_URL = "{{ supabase_url }}";
+        window.SUPABASE_KEY = "{{ supabase_key }}";
+    </script>
+    <script src="/static/js/api.js" defer></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                AI Batch Studio
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/dashboard" class="nav-item">
+                    <i>📊</i> Dashboard
+                </a>
+                <a href="/projects" class="nav-item active">
+                    <i>📁</i> Projects
+                </a>
+                <a href="#" class="nav-item">
+                    <i>⚡</i> Generation
+                </a>
+                <a href="#" class="nav-item">
+                    <i>📂</i> Files & Exports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="/settings" class="nav-item">
+                    <i>⚙️</i> Settings
+                </a>
+                <a href="#" id="logoutBtn" class="nav-item">
+                    <i>🚪</i> Logout
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="page-title">Projects</div>
+                <div class="user-menu">
+                    <span id="userEmail">Loading...</span>
+                </div>
+            </header>
+            
+            <div class="page-container">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2>Your Projects</h2>
+                    <button class="btn btn-primary" id="newProjectBtn">+ New Project</button>
+                </div>
+
+                <div id="alertBox" class="alert"></div>
+
+                <!-- Create Project Modal (inline for simplicity) -->
+                <div id="newProjectForm" class="glass-panel" style="display: none; padding: 1.5rem; margin-bottom: 2rem;">
+                    <h3>Create New Project</h3>
+                    <form id="uploadForm" class="mt-3">
+                        <div class="form-group">
+                            <label for="projectName">Project Name</label>
+                            <input type="text" id="projectName" class="form-control" required placeholder="e.g. History Episode 1">
+                        </div>
+                        <div class="form-group">
+                            <label for="csvFile">CSV File (Scenes)</label>
+                            <input type="file" id="csvFile" class="form-control" accept=".csv" required>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary" id="uploadBtn">Upload & Create</button>
+                            <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Projects List -->
+                <div id="projectsList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem;">
+                    <!-- Project cards will be injected here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await window.api.requireAuth();
+            if (!user) return;
+            
+            document.getElementById('userEmail').textContent = user.email;
+
+            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                await window.api.logout();
+                window.location.href = '/login';
+            });
+
+            const newProjectBtn = document.getElementById('newProjectBtn');
+            const newProjectForm = document.getElementById('newProjectForm');
+            const cancelBtn = document.getElementById('cancelBtn');
+            const uploadForm = document.getElementById('uploadForm');
+            const projectsList = document.getElementById('projectsList');
+            const alertBox = document.getElementById('alertBox');
+
+            newProjectBtn.addEventListener('click', () => {
+                newProjectForm.style.display = 'block';
+                newProjectBtn.style.display = 'none';
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                newProjectForm.style.display = 'none';
+                newProjectBtn.style.display = 'inline-flex';
+                uploadForm.reset();
+            });
+
+            async function loadProjects() {
+                try {
+                    const res = await window.api.fetchWithAuth('/api/jobs');
+                    if (!res.ok) throw new Error("Failed to load projects");
+                    const projects = await res.json();
+                    
+                    projectsList.innerHTML = '';
+                    if (projects.length === 0) {
+                        projectsList.innerHTML = '<p class="text-muted">No projects found. Create one to get started.</p>';
+                        return;
+                    }
+
+                    projects.forEach(p => {
+                        const card = document.createElement('div');
+                        card.className = 'glass-panel';
+                        card.style.padding = '1.5rem';
+                        
+                        // Fallback text if name is null
+                        const projectName = p.name || `Project ${p.id.substring(0, 8)}`;
+                        const statusColor = p.status === 'COMPLETED' ? 'var(--success-color)' : 
+                                           (p.status === 'FAILED' ? 'var(--error-color)' : 'var(--warning-color)');
+
+                        card.innerHTML = `
+                            <h3 style="margin-bottom: 0.5rem;">${projectName}</h3>
+                            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                                Status: <span style="color: ${statusColor}; font-weight: bold;">${p.status}</span><br>
+                                Scenes: ${p.completed_scenes} / ${p.total_scenes}<br>
+                                Created: ${new Date(p.created_at).toLocaleDateString()}
+                            </div>
+                            <div class="d-flex gap-2 mt-3">
+                                <a href="#" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">Open</a>
+                                <a href="/api/jobs/${p.id}/export-zip" target="_blank" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">Export ZIP</a>
+                            </div>
+                        `;
+                        projectsList.appendChild(card);
+                    });
+                } catch (e) {
+                    console.error(e);
+                    projectsList.innerHTML = '<p class="text-muted" style="color: var(--error-color);">Error loading projects.</p>';
+                }
+            }
+
+            uploadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const fileInput = document.getElementById('csvFile');
+                const nameInput = document.getElementById('projectName');
+                
+                if (fileInput.files.length === 0) return;
+
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                formData.append('project_name', nameInput.value);
+
+                const uploadBtn = document.getElementById('uploadBtn');
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = 'Uploading...';
+                alertBox.className = 'alert';
+
+                try {
+                    const res = await window.api.fetchWithAuth('/api/upload/csv', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || "Upload failed");
+
+                    alertBox.textContent = `Project created! Uploaded ${data.scenes_count} scenes.`;
+                    alertBox.className = 'alert alert-success show';
+                    
+                    uploadForm.reset();
+                    newProjectForm.style.display = 'none';
+                    newProjectBtn.style.display = 'inline-flex';
+                    
+                    await loadProjects();
+                } catch (e) {
+                    alertBox.textContent = e.message;
+                    alertBox.className = 'alert alert-error show';
+                } finally {
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = 'Upload & Create';
+                }
+            });
+
+            // Initial load
+            loadProjects();
+        });
+    </script>
+</body>
+</html>

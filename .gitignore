@@ -1,0 +1,12 @@
+# Environments
+.env
+venv/
+__pycache__/
+
+# Output and Uploads
+output/
+uploads/
+
+# OS specific
+.DS_Store
+Thumbs.db

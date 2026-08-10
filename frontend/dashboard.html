@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - AI Batch Studio</title>
+    <link rel="stylesheet" href="static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="static/js/api.js" defer></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                AI Batch Studio
+            </div>
+            <nav class="sidebar-nav">
+                <a href="dashboard.html" class="nav-item active">
+                    <i>📊</i> Dashboard
+                </a>
+                <a href="projects.html" class="nav-item">
+                    <i>📁</i> Projects
+                </a>
+                <a href="#" class="nav-item">
+                    <i>⚡</i> Generation
+                </a>
+                <a href="#" class="nav-item">
+                    <i>📂</i> Files & Exports
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="/settings" class="nav-item">
+                    <i>⚙️</i> Settings
+                </a>
+                <a href="#" id="logoutBtn" class="nav-item">
+                    <i>🚪</i> Logout
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="page-title">Dashboard</div>
+                <div class="user-menu">
+                    <span id="userEmail">Loading...</span>
+                </div>
+            </header>
+            
+            <div class="page-container">
+                <div class="glass-panel" style="padding: 2rem;">
+                    <h2>Welcome to AI Batch Studio</h2>
+                    <p class="text-muted">Manage your AI content generation workflows from this central hub.</p>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
+                        <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
+                            <h3 style="font-size: 2rem; color: var(--primary-color);" id="statProjects">0</h3>
+                            <p>Total Projects</p>
+                        </div>
+                        <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
+                            <h3 style="font-size: 2rem; color: var(--success-color);" id="statScenes">0</h3>
+                            <p>Total Scenes Generated</p>
+                        </div>
+                        <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
+                            <h3 style="font-size: 2rem; color: var(--warning-color);" id="statActive">0</h3>
+                            <p>Active Jobs</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await window.api.requireAuth();
+            if (!user) return;
+            
+            document.getElementById('userEmail').textContent = user.email;
+
+            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                await window.api.logout();
+                window.location.href = '/login';
+            });
+
+            // Fetch basic stats (assuming backend has some endpoint or just mocking for now)
+            try {
+                const response = await window.api.fetchWithAuth('/api/jobs');
+                if (response.ok) {
+                    const jobs = await response.json();
+                    document.getElementById('statProjects').textContent = jobs.length;
+                    const activeJobs = jobs.filter(j => j.status === 'PROCESSING').length;
+                    document.getElementById('statActive').textContent = activeJobs;
+                    
+                    let totalScenes = 0;
+                    jobs.forEach(j => { totalScenes += (j.completed_scenes || 0); });
+                    document.getElementById('statScenes').textContent = totalScenes;
+                }
+            } catch (err) {
+                console.error("Failed to fetch dashboard stats", err);
+            }
+        });
+    </script>
+</body>
+</html>
