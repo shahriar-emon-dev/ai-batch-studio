@@ -25,7 +25,6 @@ async def list_projects(token: str = Depends(get_token)):
 async def get_dashboard_stats(token: str = Depends(get_token), user_id: str = Depends(verify_token)):
     client = get_db_client(token)
     
-    # 1. Projects metrics
     proj_res = client.table("projects").select("id, status, completed_scenes, failed_scenes, total_scenes").eq("user_id", user_id).execute()
     projects = proj_res.data or []
     
@@ -34,7 +33,6 @@ async def get_dashboard_stats(token: str = Depends(get_token), user_id: str = De
     completed_scenes = sum(p.get("completed_scenes", 0) for p in projects)
     failed_scenes = sum(p.get("failed_scenes", 0) for p in projects)
     
-    # 2. Check API profile configuration status
     profiles_res = client.table("api_profiles").select("id").eq("user_id", user_id).eq("is_active", True).execute()
     api_configured = bool(profiles_res.data)
     
@@ -50,7 +48,6 @@ async def get_dashboard_stats(token: str = Depends(get_token), user_id: str = De
 async def create_project(project: ProjectCreate, token: str = Depends(get_token), user_id: str = Depends(verify_token)):
     client = get_db_client(token)
     
-    # 1. Create project
     proj_response = client.table("projects").insert({
         "name": project.name,
         "user_id": user_id,
@@ -65,7 +62,6 @@ async def create_project(project: ProjectCreate, token: str = Depends(get_token)
         
     project_id = proj_response.data[0]["id"]
     
-    # 2. Insert scenes if provided
     if project.scenes:
         scenes_to_insert = []
         for i, scene in enumerate(project.scenes):
@@ -75,9 +71,13 @@ async def create_project(project: ProjectCreate, token: str = Depends(get_token)
                 "scene_number": str(scene.get("id") or (i + 1)),
                 "visual_prompt": scene.get("visual_prompt", ""),
                 "voiceover_script": scene.get("voiceover_script", ""),
+                "master_prompt": scene.get("master_prompt"),
                 "aspect_ratio": scene.get("aspect_ratio", "16:9"),
                 "media_type": scene.get("media_type", "image"),
                 "filename": scene.get("filename", f"scene_{i+1:03d}"),
+                "style": scene.get("style"),
+                "tone": scene.get("tone"),
+                "custom_metadata": scene.get("custom_metadata", {}),
                 "overall_status": "PENDING",
                 "visual_status": "PENDING",
                 "voice_status": "PENDING"
@@ -103,9 +103,13 @@ async def import_scenes_to_project(project_id: int, req: ScenesImportRequest, to
             "scene_number": str(scene.get("id") or (i + 1)),
             "visual_prompt": scene.get("visual_prompt", ""),
             "voiceover_script": scene.get("voiceover_script", ""),
+            "master_prompt": scene.get("master_prompt"),
             "aspect_ratio": scene.get("aspect_ratio", "16:9"),
             "media_type": scene.get("media_type", "image"),
             "filename": scene.get("filename", f"scene_{i+1:03d}"),
+            "style": scene.get("style"),
+            "tone": scene.get("tone"),
+            "custom_metadata": scene.get("custom_metadata", {}),
             "overall_status": "PENDING",
             "visual_status": "PENDING",
             "voice_status": "PENDING"
@@ -129,8 +133,6 @@ async def get_project(project_id: int, token: str = Depends(get_token)):
         raise HTTPException(status_code=404, detail="Project not found")
         
     project = proj_response.data[0]
-    
-    # Order by id (fixed from non-existent scene_order)
     scenes_response = client.table("scenes").select("*").eq("project_id", project_id).order("id").execute()
     project["scenes"] = scenes_response.data or []
     

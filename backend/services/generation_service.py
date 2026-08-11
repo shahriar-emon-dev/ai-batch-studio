@@ -74,14 +74,31 @@ async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, An
                 "overall_status": "PROCESSING"
             }).eq("id", scene_id).execute()
             
-        # 1. Visual Generation (Image)
-        image_prompt = scene_data.get("visual_prompt", "")
+        # 1. Visual Generation (Image) with Dynamic Prompt Composition
+        raw_prompt = scene_data.get("visual_prompt", "")
+        master_prompt = scene_data.get("master_prompt", "")
+        style = scene_data.get("style", "")
+        tone = scene_data.get("tone", "")
+        custom_meta = scene_data.get("custom_metadata", {}) or {}
+        
+        prompt_parts = []
+        if master_prompt: prompt_parts.append(master_prompt.strip())
+        if raw_prompt: prompt_parts.append(raw_prompt.strip())
+        if style: prompt_parts.append(f"Style: {style.strip()}")
+        if tone: prompt_parts.append(f"Tone: {tone.strip()}")
+        
+        if isinstance(custom_meta, dict):
+            for k, v in custom_meta.items():
+                if v and isinstance(v, str) and k.lower() in ["character", "camera_angle", "lighting", "location", "mood"]:
+                    prompt_parts.append(f"{k.replace('_', ' ').title()}: {v.strip()}")
+                    
+        final_image_prompt = ", ".join(prompt_parts) if prompt_parts else raw_prompt
         aspect_ratio = scene_data.get("aspect_ratio", "16:9")
         image_filename = f"{scene_id}.png"
         image_path = os.path.join(settings.images_dir, image_filename)
         
-        if image_prompt and not os.path.exists(image_path):
-            image_bytes = await generate_image(api_key, image_prompt, aspect_ratio=aspect_ratio)
+        if final_image_prompt and not os.path.exists(image_path):
+            image_bytes = await generate_image(api_key, final_image_prompt, aspect_ratio=aspect_ratio)
             with open(image_path, "wb") as f:
                 f.write(image_bytes)
                 

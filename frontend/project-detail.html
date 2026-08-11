@@ -67,26 +67,80 @@
                     </div>
                 </div>
 
-                <!-- CSV Upload Drag-and-Drop Zone -->
+                <!-- CSV Upload Dropzone -->
                 <div class="glass-panel mb-4" style="padding: 2rem;" id="uploadPanel">
-                    <h3>Upload CSV Scene List</h3>
-                    <p class="text-muted mt-1">Upload a structured CSV containing columns: <code>id, visual_prompt, voiceover_script, filename, aspect_ratio</code>.</p>
+                    <h3>Upload Any CSV File</h3>
+                    <p class="text-muted mt-1">Our intelligent column classifier automatically detects, classifies, and maps any arbitrary CSV structure.</p>
                     
                     <div class="dropzone mt-4" id="dropzone">
                         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;" id="dropzoneIcon">📁</div>
                         <h4 id="dropzoneTitle">Drag & Drop CSV file here, or click to browse</h4>
-                        <p class="text-muted mt-1" style="font-size: 0.85rem;" id="dropzoneSub">Supports UTF-8 CSV files</p>
+                        <p class="text-muted mt-1" style="font-size: 0.85rem;" id="dropzoneSub">Supports arbitrary CSV columns & encodings</p>
                         <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
                     </div>
+                </div>
 
-                    <div id="uploadStatus" class="mt-4 hidden"></div>
+                <!-- Interactive CSV Analysis & Column Mapping Card (Initially Hidden) -->
+                <div class="glass-panel mb-4 hidden" id="csvAnalysisPanel" style="padding: 2rem; border-left: 4px solid var(--primary);">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h3>Intelligent CSV Analysis Summary</h3>
+                            <p class="text-muted mt-1" id="csvAnalysisFileSub">Analyzing uploaded file...</p>
+                        </div>
+                        <div id="detectedRequirementsBadges" class="flex gap-sm"></div>
+                    </div>
+
+                    <!-- File Metrics Grid -->
+                    <div class="stats-grid mb-4">
+                        <div class="stat-card blue">
+                            <div class="stat-label">File Size</div>
+                            <div class="stat-value blue" id="statFileSize">0 KB</div>
+                        </div>
+                        <div class="stat-card purple">
+                            <div class="stat-label">Total Rows</div>
+                            <div class="stat-value purple" id="statTotalRows">0</div>
+                        </div>
+                        <div class="stat-card green">
+                            <div class="stat-label">Detected Columns</div>
+                            <div class="stat-value green" id="statTotalCols">0</div>
+                        </div>
+                        <div class="stat-card blue">
+                            <div class="stat-label">Encoding / Delimiter</div>
+                            <div class="stat-value blue" style="font-size: 1.3rem; margin-top:0.3rem;" id="statEncoding">—</div>
+                        </div>
+                    </div>
+
+                    <!-- Column Mapping Table -->
+                    <h4 class="mb-2">Detected Column Mappings & Manual Overrides</h4>
+                    <p class="text-muted mb-3" style="font-size: 0.85rem;">Adjust mapping targets if required. Unmapped columns will be securely stored as custom metadata.</p>
+
+                    <div class="table-container mb-4">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Original CSV Header</th>
+                                    <th>Detected Meaning</th>
+                                    <th>Confidence Score</th>
+                                    <th>Target Schema Field (Override)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="columnMappingTableBody">
+                                <tr><td colspan="4" class="text-muted text-center">Analyzing columns...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="flex justify-end gap-2">
+                        <button class="btn btn-secondary" id="btnCancelMapping">Cancel</button>
+                        <button class="btn btn-primary" id="btnConfirmImport">Confirm Column Mapping & Import Scenes</button>
+                    </div>
                 </div>
 
                 <!-- Scene Editor Table -->
                 <div class="glass-panel" style="padding: 1.5rem;">
                     <div class="flex justify-between items-center mb-4">
                         <h3>Project Scenes (<span id="sceneCount">0</span>)</h3>
-                        <span id="csvSuccessBadge" class="badge badge-success hidden">✔ Scenes Loaded</span>
+                        <span id="csvSuccessBadge" class="badge badge-success hidden">✔ Scenes Active</span>
                     </div>
 
                     <div class="table-container">
@@ -115,6 +169,7 @@
     <script>
         let currentProjectId = null;
         let currentScenes = [];
+        let lastAnalysisResult = null;
 
         document.addEventListener('DOMContentLoaded', async () => {
             const user = await Auth.requireAuth();
@@ -169,7 +224,7 @@
                 tbody.innerHTML = scenes.map((s, idx) => `
                     <tr>
                         <td class="font-mono">${s.scene_number || (idx + 1)}</td>
-                        <td class="truncate" style="max-width:250px;" title="${s.visual_prompt}">${s.visual_prompt}</td>
+                        <td class="truncate" style="max-width:250px;" title="${s.visual_prompt}">${s.visual_prompt || '—'}</td>
                         <td class="truncate" style="max-width:250px;" title="${s.voiceover_script}">${s.voiceover_script || '—'}</td>
                         <td>${s.aspect_ratio || '16:9'}</td>
                         <td><span class="badge badge-secondary">${s.media_type || 'image'}</span></td>
@@ -183,7 +238,6 @@
             const csvInput = document.getElementById('csvFileInput');
 
             dropzone.onclick = () => csvInput.click();
-
             dropzone.ondragover = (e) => { e.preventDefault(); dropzone.classList.add('dragover'); };
             dropzone.ondragleave = () => dropzone.classList.remove('dragover');
             dropzone.ondrop = (e) => {
@@ -201,44 +255,107 @@
                 formData.append('file', file);
 
                 try {
-                    Toast.info(`Validating ${file.name}...`);
+                    Toast.info(`Analyzing ${file.name}...`);
                     const result = await API.post('/api/upload/csv', formData);
+                    lastAnalysisResult = result;
 
-                    // Show validation status
-                    const statusEl = document.getElementById('uploadStatus');
-                    statusEl.classList.remove('hidden');
+                    // Display Analysis Panel
+                    const panel = document.getElementById('csvAnalysisPanel');
+                    panel.classList.remove('hidden');
+                    document.getElementById('csvAnalysisFileSub').textContent = `File: ${result.filename} | ${result.total_rows} Rows | ${result.columns_count} Columns`;
 
-                    statusEl.innerHTML = `
-                        <div class="stats-grid mb-4">
-                            <div class="stat-card blue">
-                                <div class="stat-label">Total CSV Rows</div>
-                                <div class="stat-value blue">${result.total_rows}</div>
-                            </div>
-                            <div class="stat-card green">
-                                <div class="stat-label">Valid Scenes</div>
-                                <div class="stat-value green">${result.valid_count}</div>
-                            </div>
-                            <div class="stat-card red">
-                                <div class="stat-label">Invalid Rows</div>
-                                <div class="stat-value red">${result.invalid_count}</div>
-                            </div>
-                        </div>
+                    document.getElementById('statFileSize').textContent = `${(result.file_size_bytes / 1024).toFixed(1)} KB`;
+                    document.getElementById('statTotalRows').textContent = result.total_rows;
+                    document.getElementById('statTotalCols').textContent = result.columns_count;
+                    document.getElementById('statEncoding').textContent = `${result.encoding} (${result.delimiter})`;
+
+                    // Badges
+                    const badgesEl = document.getElementById('detectedRequirementsBadges');
+                    const reqs = result.detected_media_requirements || {};
+                    badgesEl.innerHTML = `
+                        ${reqs.has_images ? '<span class="badge badge-success">🖼️ Image Prompts</span>' : ''}
+                        ${reqs.has_voiceovers ? '<span class="badge badge-warning">🎙️ Voiceovers</span>' : ''}
+                        ${reqs.has_videos ? '<span class="badge badge-danger">🎬 Videos</span>' : ''}
+                        ${result.has_master_prompt ? '<span class="badge badge-secondary">✨ Master Prompt</span>' : ''}
                     `;
 
-                    if (result.valid_rows && result.valid_rows.length > 0) {
-                        await API.post(`/api/projects/${currentProjectId}/scenes`, {
-                            scenes: result.valid_rows
-                        });
+                    // Mapping Table
+                    const mappingTbody = document.getElementById('columnMappingTableBody');
+                    mappingTbody.innerHTML = result.detected_columns.map(col => `
+                        <tr>
+                            <td><strong>${col.original_name}</strong></td>
+                            <td><span class="badge ${col.detected_meaning !== 'custom_metadata' ? 'badge-success' : 'badge-secondary'}">${col.detected_meaning}</span></td>
+                            <td><span class="font-mono text-muted">${col.confidence}%</span></td>
+                            <td>
+                                <select class="form-select column-override-select" data-original="${col.original_name}" style="padding:0.4rem; font-size:0.85rem;">
+                                    <option value="visual_prompt" ${col.detected_meaning === 'visual_prompt' ? 'selected' : ''}>Visual Prompt (visual_prompt)</option>
+                                    <option value="voiceover_script" ${col.detected_meaning === 'voiceover_script' ? 'selected' : ''}>Voiceover Script (voiceover_script)</option>
+                                    <option value="master_prompt" ${col.detected_meaning === 'master_prompt' ? 'selected' : ''}>Master Prompt (master_prompt)</option>
+                                    <option value="aspect_ratio" ${col.detected_meaning === 'aspect_ratio' ? 'selected' : ''}>Aspect Ratio (aspect_ratio)</option>
+                                    <option value="duration" ${col.detected_meaning === 'duration' ? 'selected' : ''}>Duration (duration)</option>
+                                    <option value="style" ${col.detected_meaning === 'style' ? 'selected' : ''}>Style (style)</option>
+                                    <option value="tone" ${col.detected_meaning === 'tone' ? 'selected' : ''}>Tone (tone)</option>
+                                    <option value="voice_name" ${col.detected_meaning === 'voice_name' ? 'selected' : ''}>Voice Name (voice_name)</option>
+                                    <option value="negative_prompt" ${col.detected_meaning === 'negative_prompt' ? 'selected' : ''}>Negative Prompt (negative_prompt)</option>
+                                    <option value="filename" ${col.detected_meaning === 'filename' ? 'selected' : ''}>Filename (filename)</option>
+                                    <option value="media_type" ${col.detected_meaning === 'media_type' ? 'selected' : ''}>Media Type (media_type)</option>
+                                    <option value="custom_metadata" ${col.detected_meaning === 'custom_metadata' ? 'selected' : ''}>Custom Metadata (custom_metadata)</option>
+                                    <option value="ignore">Ignore Column</option>
+                                </select>
+                            </td>
+                        </tr>
+                    `).join('');
 
-                        Toast.success(`Successfully uploaded ${result.valid_count} scenes from ${file.name}!`);
-                        loadProjectDetails();
-                    }
+                    panel.scrollIntoView({ behavior: 'smooth' });
                 } catch(e) {
-                    Toast.error(`CSV Upload Failed: ${e.message}`);
+                    Toast.error(`CSV Analysis Failed: ${e.message}`);
                 }
             }
 
-            // Load Sample CSV Button
+            document.getElementById('btnCancelMapping').onclick = () => {
+                document.getElementById('csvAnalysisPanel').classList.add('hidden');
+            };
+
+            document.getElementById('btnConfirmImport').onclick = async () => {
+                if (!lastAnalysisResult || !lastAnalysisResult.valid_rows) return;
+
+                // Collect manual column overrides
+                const overrides = {};
+                document.querySelectorAll('.column-override-select').forEach(sel => {
+                    const orig = sel.dataset.original;
+                    overrides[orig] = sel.value;
+                });
+
+                // Apply custom overrides & re-normalize valid rows
+                const normalizedScenes = lastAnalysisResult.valid_rows.map(row => {
+                    const scene = { custom_metadata: {} };
+                    Object.entries(row).forEach(([k, v]) => {
+                        const target = overrides[k] || k;
+                        if (target === 'ignore') return;
+                        if (target === 'custom_metadata') {
+                            scene.custom_metadata[k] = v;
+                        } else {
+                            scene[target] = v;
+                        }
+                    });
+                    return scene;
+                });
+
+                try {
+                    Toast.info("Importing mapped scenes into project workspace...");
+                    await API.post(`/api/projects/${currentProjectId}/scenes`, {
+                        scenes: normalizedScenes
+                    });
+
+                    Toast.success(`Successfully imported ${normalizedScenes.length} scenes!`);
+                    document.getElementById('csvAnalysisPanel').classList.add('hidden');
+                    loadProjectDetails();
+                } catch(e) {
+                    Toast.error(`Import failed: ${e.message}`);
+                }
+            };
+
+            // Sample CSV Loader
             document.getElementById('btnLoadSample').onclick = async () => {
                 const sampleScenes = [
                     {
@@ -246,21 +363,27 @@
                         visual_prompt: "A serene futuristic cyberpunk city at sunset, neon reflections on wet asphalt with glowing holographic billboards",
                         voiceover_script: "Welcome to the city of tomorrow, where digital dreams illuminate the night sky.",
                         filename: "scene_001",
-                        aspect_ratio: "16:9"
+                        aspect_ratio: "16:9",
+                        style: "Cyberpunk Cinematic",
+                        tone: "Inspirational"
                     },
                     {
                         id: "2",
                         visual_prompt: "Cinematic portrait of an ancient warrior standing on a mountain peak during a golden sunrise",
                         voiceover_script: "Across the peaks of history, victory belonged to those who dared to dream.",
                         filename: "scene_002",
-                        aspect_ratio: "16:9"
+                        aspect_ratio: "16:9",
+                        style: "Historical Epic",
+                        tone: "Heroic"
                     },
                     {
                         id: "3",
                         visual_prompt: "Aerial drone shot of lush tropical rainforest with mist rising over emerald canopy",
                         voiceover_script: "Deep within the untouched wilderness lies an ecosystem millions of years in the making.",
                         filename: "scene_003",
-                        aspect_ratio: "16:9"
+                        aspect_ratio: "16:9",
+                        style: "Nature Documentary",
+                        tone: "Calm"
                     }
                 ];
 
