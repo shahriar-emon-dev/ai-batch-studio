@@ -146,23 +146,30 @@
             // Load Dashboard Statistics & Recent Projects
             async function loadDashboardData() {
                 try {
+                    // Fetch real dynamic SQL stats from backend
+                    const stats = await API.get('/api/projects/stats');
+                    document.getElementById('statProjects').textContent = stats.total_projects || 0;
+                    document.getElementById('statActiveJobs').textContent = stats.active_jobs || 0;
+                    document.getElementById('statCompleted').textContent = stats.completed_scenes || 0;
+                    document.getElementById('statFailed').textContent = stats.failed_scenes || 0;
+
+                    const apiBadge = document.getElementById('apiStatusBadge');
+                    if (stats.api_configured) {
+                        apiBadge.className = 'badge badge-success';
+                        apiBadge.textContent = 'Active';
+                    } else {
+                        apiBadge.className = 'badge badge-danger';
+                        apiBadge.textContent = 'Not Configured';
+                    }
+
+                    // Fetch recent projects list
                     const projects = await API.get('/api/projects');
-                    document.getElementById('statProjects').textContent = projects.length;
-
-                    let totalCompleted = 0;
-                    let totalFailed = 0;
-                    let activeCount = 0;
-
                     const projectsTableBody = document.getElementById('projectsTableBody');
                     
-                    if (projects.length === 0) {
+                    if (!projects || projects.length === 0) {
                         projectsTableBody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No projects found. Create your first project to get started.</td></tr>';
                     } else {
                         projectsTableBody.innerHTML = projects.slice(0, 5).map(p => {
-                            totalCompleted += (p.completed_scenes || 0);
-                            totalFailed += (p.failed_scenes || 0);
-                            if (p.status === 'PROCESSING' || p.status === 'generating') activeCount++;
-
                             const statusCls = (p.status === 'COMPLETED' || p.status === 'completed') ? 'badge-success'
                                 : (p.status === 'PROCESSING' || p.status === 'generating') ? 'badge-warning'
                                 : (p.status === 'FAILED' || p.status === 'failed') ? 'badge-danger'
@@ -182,27 +189,8 @@
                         }).join('');
                     }
 
-                    document.getElementById('statCompleted').textContent = totalCompleted;
-                    document.getElementById('statFailed').textContent = totalFailed;
-                    document.getElementById('statActiveJobs').textContent = activeCount;
-
                 } catch(e) {
                     console.error("Dashboard error:", e);
-                }
-
-                // Check API status
-                try {
-                    const settings = await API.get('/api/settings');
-                    const badge = document.getElementById('apiStatusBadge');
-                    if (settings.has_api_key) {
-                        badge.className = 'badge badge-success';
-                        badge.textContent = 'Active';
-                    } else {
-                        badge.className = 'badge badge-danger';
-                        badge.textContent = 'Not Configured';
-                    }
-                } catch(e) {
-                    console.error("Settings error:", e);
                 }
             }
 

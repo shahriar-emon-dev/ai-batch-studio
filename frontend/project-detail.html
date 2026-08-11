@@ -218,13 +218,12 @@
                     `;
 
                     if (result.valid_rows && result.valid_rows.length > 0) {
-                        // Save scenes to project via backend
-                        await API.post('/api/projects', {
-                            name: document.getElementById('projTitle').textContent,
+                        // Save scenes directly to current active project in Supabase
+                        await API.post(`/api/projects/${currentProjectId}/scenes`, {
                             scenes: result.valid_rows
                         });
 
-                        Toast.success(`Imported ${result.valid_count} scenes!`);
+                        Toast.success(`Imported ${result.valid_count} scenes into project!`);
                         loadProjectDetails();
                     }
                 } catch(e) {

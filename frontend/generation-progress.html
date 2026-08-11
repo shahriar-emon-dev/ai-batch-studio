@@ -159,18 +159,25 @@
                 }
             }
 
+            let currentJobId = null;
+
             async function updateProgress() {
                 try {
+                    // Fetch active job metadata
+                    const activeJob = await API.get(`/api/generation/active/${currentProjectId}`);
+                    if (activeJob && activeJob.id) {
+                        currentJobId = activeJob.id;
+                    }
+
                     const project = await API.get(`/api/projects/${currentProjectId}`);
                     document.getElementById('projNameHeading').textContent = project.name;
-                    document.getElementById('jobStatusText').textContent = `Status: ${project.status || 'PENDING'}`;
+                    document.getElementById('jobStatusText').textContent = `Status: ${activeJob.status || project.status || 'PENDING'}`;
 
                     const scenes = project.scenes || [];
                     const total = scenes.length;
                     const completed = scenes.filter(s => s.overall_status === 'COMPLETED').length;
                     const failed = scenes.filter(s => s.overall_status === 'FAILED').length;
                     const processing = scenes.filter(s => s.overall_status === 'PROCESSING' || s.overall_status === 'VISUAL_GENERATING' || s.overall_status === 'VOICE_GENERATING').length;
-                    const pending = total - (completed + failed + processing);
 
                     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -201,7 +208,7 @@
                     }
 
                     // Button visibility
-                    const isPaused = project.status === 'PAUSED';
+                    const isPaused = (activeJob.status === 'PAUSED' || project.status === 'PAUSED');
                     document.getElementById('btnPause').style.display = isPaused ? 'none' : 'inline-flex';
                     document.getElementById('btnResume').style.display = isPaused ? 'inline-flex' : 'none';
 
@@ -210,10 +217,11 @@
                 }
             }
 
-            // Bind Control Actions
+            // Bind Control Actions using dynamic project_id / job_id
             document.getElementById('btnPause').onclick = async () => {
                 try {
-                    await API.post(`/api/generation/1/pause`, {});
+                    const targetId = currentJobId || currentProjectId;
+                    await API.post(`/api/generation/${targetId}/pause`, {});
                     Toast.info('Job pause signal sent');
                     updateProgress();
                 } catch(e) { Toast.error(e.message); }
@@ -221,7 +229,8 @@
 
             document.getElementById('btnResume').onclick = async () => {
                 try {
-                    await API.post(`/api/generation/1/resume`, {});
+                    const targetId = currentJobId || currentProjectId;
+                    await API.post(`/api/generation/${targetId}/resume`, {});
                     Toast.success('Job resumed');
                     updateProgress();
                 } catch(e) { Toast.error(e.message); }
@@ -229,7 +238,8 @@
 
             document.getElementById('btnRetryFailed').onclick = async () => {
                 try {
-                    await API.post(`/api/generation/1/retry`, {});
+                    const targetId = currentJobId || currentProjectId;
+                    await API.post(`/api/generation/${targetId}/retry`, {});
                     Toast.info('Retrying failed scenes...');
                     updateProgress();
                 } catch(e) { Toast.error(e.message); }
@@ -238,7 +248,8 @@
             document.getElementById('btnCancel').onclick = async () => {
                 if (!confirm('Are you sure you want to cancel this generation job?')) return;
                 try {
-                    await API.post(`/api/generation/1/cancel`, {});
+                    const targetId = currentJobId || currentProjectId;
+                    await API.post(`/api/generation/${targetId}/cancel`, {});
                     Toast.warning('Job cancelled');
                     updateProgress();
                 } catch(e) { Toast.error(e.message); }
