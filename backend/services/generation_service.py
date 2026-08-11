@@ -5,7 +5,7 @@ import datetime
 from typing import Dict, Any, List, Optional
 from backend.services.google_ai_service import generate_image, generate_speech, RateLimitException, ProviderUnavailableException
 from backend.services.ffmpeg_service import merge_image_audio
-from backend.database import admin_client
+from backend.database import get_admin_client
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -16,11 +16,12 @@ recovery_lock = asyncio.Lock()
 
 async def update_job_progress(job_id: int, project_id: str):
     """Calculates aggregate metrics and updates generation_jobs and projects tables in Supabase."""
-    if not admin_client or not job_id:
+    client = get_admin_client()
+    if not client or not job_id:
         return
 
     try:
-        scenes_res = admin_client.table("scenes").select("overall_status").eq("project_id", project_id).execute()
+        scenes_res = client.table("scenes").select("overall_status").eq("project_id", project_id).execute()
         scenes = scenes_res.data or []
         
         total = len(scenes)

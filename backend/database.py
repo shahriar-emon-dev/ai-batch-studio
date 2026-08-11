@@ -4,13 +4,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Global admin client for operations that require bypassing RLS (like background workers updating status)
+# Global admin client instance
 admin_client = None
-try:
-    if settings.supabase_url and settings.supabase_service_role_key:
-        admin_client = create_client(settings.supabase_url, settings.supabase_service_role_key)
-except Exception as e:
-    logger.warning(f"Failed to initialize Supabase admin client: {e}")
+
+def get_admin_client() -> Client:
+    """Returns an administrative Supabase client instance."""
+    global admin_client
+    if admin_client is not None:
+        return admin_client
+        
+    try:
+        if settings.supabase_url:
+            key = settings.supabase_service_role_key or settings.supabase_anon_key
+            if key:
+                admin_client = create_client(settings.supabase_url, key)
+    except Exception as e:
+        logger.warning(f"Failed to initialize Supabase admin client: {e}")
+        
+    return admin_client
+
+# Initialize on module load
+get_admin_client()
 
 def get_db_client(token: str = None) -> Client:
     """
