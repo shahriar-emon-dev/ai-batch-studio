@@ -27,18 +27,36 @@ const API = {
         if (options.body && !(options.body instanceof FormData)) {
             headers['Content-Type'] = 'application/json';
         }
-        const res = await fetch(`${window.API_BASE_URL || ''}${endpoint}`, { ...options, headers });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            let errorMsg = err.detail || `Request failed: ${res.statusText}`;
-            
-            if (res.status === 401) errorMsg = "Session expired. Please sign in again.";
-            else if (res.status === 429) errorMsg = "API usage limit reached. Generation paused.";
-            else if (res.status >= 500) errorMsg = "Something went wrong on the server. Please try again.";
-            
-            throw new Error(errorMsg);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+        try {
+            const res = await fetch(`${window.API_BASE_URL || ''}${endpoint}`, { 
+                ...options, 
+                headers,
+                signal: controller.signal 
+            });
+            clearTimeout(timeoutId);
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                let errorMsg = err.detail || `Request failed (${res.status}): ${res.statusText}`;
+                
+                if (res.status === 401) errorMsg = "Session expired. Please sign in again.";
+                else if (res.status === 429) errorMsg = "API usage limit reached. Generation paused.";
+                else if (res.status >= 500) errorMsg = err.detail || "Server error occurred. Please check server logs.";
+                
+                throw new Error(errorMsg);
+            }
+            return await res.json();
+        } catch (e) {
+            clearTimeout(timeoutId);
+            if (e.name === 'AbortError') {
+                throw new Error("Request timed out after 15 seconds. Please check backend connection.");
+            }
+            throw e;
         }
-        return res.json();
     },
 
     get: (endpoint) => API.fetch(endpoint),

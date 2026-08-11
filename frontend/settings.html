@@ -188,14 +188,19 @@
 
             apiForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const apiKey = document.getElementById('apiKey').value;
-                const profileName = document.getElementById('profileName').value;
+                const apiKey = document.getElementById('apiKey').value.trim();
+                const profileName = document.getElementById('profileName').value.trim();
+
+                if (!apiKey || !profileName) {
+                    showAlert("Please enter both Profile Name and API Key.", false);
+                    return;
+                }
 
                 saveApiBtn.disabled = true;
                 saveApiBtn.textContent = 'Saving...';
 
                 try {
-                    await API.post('/api/settings/api-profiles', {
+                    const res = await API.post('/api/settings/api-profiles', {
                         profile_name: profileName,
                         provider: "google",
                         api_key: apiKey,
@@ -205,9 +210,10 @@
                     showAlert("API Profile securely encrypted and saved!");
                     document.getElementById('apiKey').value = '';
                     document.getElementById('profileName').value = '';
-                    loadProfiles();
+                    await loadProfiles();
                 } catch (e) {
-                    showAlert(e.message, false);
+                    console.error("Save API profile error:", e);
+                    showAlert(e.message || "Failed to save API Profile", false);
                 } finally {
                     saveApiBtn.disabled = false;
                     saveApiBtn.textContent = '💾 Save API Profile';
