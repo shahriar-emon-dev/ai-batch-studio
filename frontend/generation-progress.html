@@ -68,53 +68,71 @@
                         </div>
                     </div>
 
-                    <!-- Progress Bar -->
-                    <div class="progress-bar-bg mb-2">
+                    <!-- Overall Progress Bar -->
+                    <div class="flex justify-between items-center mb-2">
+                        <strong>Overall Progress</strong>
+                        <span id="progressPctText" class="font-mono" style="font-size: 1.1rem; font-weight:700; color:var(--primary);">0%</span>
+                    </div>
+                    <div class="progress-bar-bg mb-3">
                         <div id="progressFill" class="progress-bar-fill" style="width: 0%;"></div>
                     </div>
-                    <div class="flex justify-between text-muted" style="font-size:0.85rem;">
-                        <span id="progressPctText">0% Complete</span>
-                        <span id="progressCountText">0 / 0 Tasks Finished</span>
+
+                    <!-- Speed & ETA Banner -->
+                    <div class="flex justify-between text-muted" style="font-size:0.85rem; border-top: 1px solid var(--border-glass); padding-top: 0.75rem;">
+                        <span>🚀 <strong>Speed:</strong> <span id="genSpeedText">Calculating...</span></span>
+                        <span>⏱️ <strong>Estimated Remaining Time (ETA):</strong> <span id="etaText">Calculating...</span></span>
+                        <span>📦 <strong>Tasks Completed:</strong> <span id="progressCountText">0 / 0</span></span>
                     </div>
                 </div>
 
-                <!-- Stats Grid -->
+                <!-- Currently Processing Active Card -->
+                <div class="glass-card mb-4" style="padding: 1.25rem; border-left: 4px solid var(--primary);">
+                    <div class="flex items-center gap-md">
+                        <div style="font-size: 1.5rem;" id="processingIcon">⚡</div>
+                        <div>
+                            <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;" class="text-muted">Currently Processing</div>
+                            <h3 id="currentProcessingText" style="font-size: 1.1rem; margin-top: 0.25rem;">Idle — Waiting for generation pipeline to start</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Media Breakdown Stats Grid -->
                 <div class="stats-grid mb-4">
                     <div class="stat-card blue">
-                        <div class="stat-label">Total Scenes</div>
-                        <div class="stat-value blue" id="statTotal">0</div>
-                    </div>
-                    <div class="stat-card green">
-                        <div class="stat-label">Completed</div>
-                        <div class="stat-value green" id="statCompleted">0</div>
+                        <div class="stat-label">🖼️ Images Generated</div>
+                        <div class="stat-value blue" id="statImages">0 / 0</div>
                     </div>
                     <div class="stat-card purple">
-                        <div class="stat-label">Processing</div>
-                        <div class="stat-value purple" id="statProcessing">0</div>
+                        <div class="stat-label">🎙️ Voiceovers Generated</div>
+                        <div class="stat-value purple" id="statVoiceovers">0 / 0</div>
+                    </div>
+                    <div class="stat-card green">
+                        <div class="stat-label">🎬 Videos Merged</div>
+                        <div class="stat-value green" id="statVideos">0 / 0</div>
                     </div>
                     <div class="stat-card red">
-                        <div class="stat-label">Failed</div>
+                        <div class="stat-label">⚠️ Failed Tasks</div>
                         <div class="stat-value red" id="statFailed">0</div>
                     </div>
                 </div>
 
                 <!-- Scene Breakdown Table -->
                 <div class="glass-panel" style="padding: 1.5rem;">
-                    <h3>Scene Status Breakdown</h3>
+                    <h3>Live Scene Pipeline Breakdown</h3>
                     <div class="table-container mt-4">
                         <table>
                             <thead>
                                 <tr>
                                     <th>#</th>
                                     <th>Visual Prompt</th>
-                                    <th>Visual Status</th>
-                                    <th>Voice Status</th>
+                                    <th>Image Status</th>
+                                    <th>Voiceover Status</th>
                                     <th>Overall Status</th>
-                                    <th>Error Message</th>
+                                    <th>Diagnostics / Error</th>
                                 </tr>
                             </thead>
                             <tbody id="progressTableBody">
-                                <tr><td colspan="6" class="text-muted text-center">Loading progress...</td></tr>
+                                <tr><td colspan="6" class="text-muted text-center">Loading live progress...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -127,6 +145,8 @@
     <script>
         let currentProjectId = null;
         let pollInterval = null;
+        let jobStartTime = null;
+        let currentJobId = null;
 
         document.addEventListener('DOMContentLoaded', async () => {
             const user = await Auth.requireAuth();
@@ -144,7 +164,6 @@
             currentProjectId = urlParams.get('project_id');
 
             if (!currentProjectId) {
-                // Fetch first active or recent project
                 try {
                     const projects = await API.get('/api/projects');
                     if (projects && projects.length > 0) {
@@ -159,41 +178,105 @@
                 }
             }
 
-            let currentJobId = null;
-
             async function updateProgress() {
                 try {
-                    // Fetch active job metadata
+                    // 1. Fetch active job status
                     const activeJob = await API.get(`/api/generation/active/${currentProjectId}`);
                     if (activeJob && activeJob.id) {
                         currentJobId = activeJob.id;
+                        if (activeJob.started_at && !jobStartTime) {
+                            jobStartTime = new Date(activeJob.started_at).getTime();
+                        }
                     }
 
+                    // 2. Fetch project & scenes
                     const project = await API.get(`/api/projects/${currentProjectId}`);
                     document.getElementById('projNameHeading').textContent = project.name;
-                    document.getElementById('jobStatusText').textContent = `Status: ${activeJob.status || project.status || 'PENDING'}`;
+                    
+                    const jobStatus = activeJob.status || project.status || 'PENDING';
+                    document.getElementById('jobStatusText').textContent = `Status: ${jobStatus}`;
 
                     const scenes = project.scenes || [];
-                    const total = scenes.length;
-                    const completed = scenes.filter(s => s.overall_status === 'COMPLETED').length;
-                    const failed = scenes.filter(s => s.overall_status === 'FAILED').length;
-                    const processing = scenes.filter(s => s.overall_status === 'PROCESSING' || s.overall_status === 'VISUAL_GENERATING' || s.overall_status === 'VOICE_GENERATING').length;
+                    const totalScenes = scenes.length;
 
-                    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+                    // Calculate granular image & voiceover metrics directly from scenes
+                    const completedImages = scenes.filter(s => s.visual_status === 'VISUAL_COMPLETED' || s.overall_status === 'COMPLETED').length;
+                    const completedVoiceovers = scenes.filter(s => s.voice_status === 'VOICE_COMPLETED' || s.overall_status === 'COMPLETED').length;
+                    const completedVideos = scenes.filter(s => s.merged_path || s.overall_status === 'COMPLETED').length;
+
+                    const completedScenes = scenes.filter(s => s.overall_status === 'COMPLETED').length;
+                    const failedScenes = scenes.filter(s => s.overall_status === 'FAILED' || s.visual_status === 'FAILED' || s.voice_status === 'FAILED').length;
+                    const processingScenes = scenes.filter(s => 
+                        s.overall_status === 'PROCESSING' || 
+                        s.visual_status === 'VISUAL_GENERATING' || 
+                        s.voice_status === 'VOICE_GENERATING'
+                    );
+
+                    const totalTasks = totalScenes * 2; // Image + Voiceover per scene
+                    const totalCompletedTasks = completedImages + completedVoiceovers;
+
+                    const pct = totalTasks > 0 ? Math.round((totalCompletedTasks / totalTasks) * 100) : 0;
 
                     document.getElementById('progressFill').style.width = `${pct}%`;
-                    document.getElementById('progressPctText').textContent = `${pct}% Complete`;
-                    document.getElementById('progressCountText').textContent = `${completed} / ${total} Tasks Finished`;
+                    document.getElementById('progressPctText').textContent = `${pct}%`;
+                    document.getElementById('progressCountText').textContent = `${completedScenes} / ${totalScenes} Scenes`;
 
-                    document.getElementById('statTotal').textContent = total;
-                    document.getElementById('statCompleted').textContent = completed;
-                    document.getElementById('statProcessing').textContent = processing;
-                    document.getElementById('statFailed').textContent = failed;
+                    document.getElementById('statImages').textContent = `${completedImages} / ${totalScenes}`;
+                    document.getElementById('statVoiceovers').textContent = `${completedVoiceovers} / ${totalScenes}`;
+                    document.getElementById('statVideos').textContent = `${completedVideos} / ${totalScenes}`;
+                    document.getElementById('statFailed').textContent = failedScenes;
 
-                    // Update Table
+                    // Currently Processing Card Indicator
+                    const iconEl = document.getElementById('processingIcon');
+                    const textEl = document.getElementById('currentProcessingText');
+
+                    if (processingScenes.length > 0) {
+                        const activeScene = processingScenes[0];
+                        if (activeScene.visual_status === 'VISUAL_GENERATING') {
+                            iconEl.textContent = '🖼️';
+                            textEl.textContent = `Scene ${activeScene.scene_number || activeScene.id} — Generating Image...`;
+                        } else if (activeScene.voice_status === 'VOICE_GENERATING') {
+                            iconEl.textContent = '🎙️';
+                            textEl.textContent = `Scene ${activeScene.scene_number || activeScene.id} — Generating Voiceover...`;
+                        } else {
+                            iconEl.textContent = '⚡';
+                            textEl.textContent = `Scene ${activeScene.scene_number || activeScene.id} — Processing Media Pipeline...`;
+                        }
+                    } else if (jobStatus === 'COMPLETED') {
+                        iconEl.textContent = '✅';
+                        textEl.textContent = 'All scenes generated successfully!';
+                    } else if (jobStatus === 'PAUSED') {
+                        iconEl.textContent = '⏸️';
+                        textEl.textContent = 'Generation pipeline paused by user';
+                    } else if (jobStatus === 'FAILED') {
+                        iconEl.textContent = '⚠️';
+                        textEl.textContent = 'Pipeline stopped due to errors. Click "Retry Failed" to continue.';
+                    } else {
+                        iconEl.textContent = '💤';
+                        textEl.textContent = 'Idle — Waiting for generation pipeline to start';
+                    }
+
+                    // Speed & ETA Calculations
+                    if (jobStartTime && totalCompletedTasks > 0 && (jobStatus === 'PROCESSING' || jobStatus === 'generating')) {
+                        const elapsedMins = (Date.now() - jobStartTime) / 60000;
+                        const speed = elapsedMins > 0 ? (totalCompletedTasks / elapsedMins).toFixed(1) : '0';
+                        document.getElementById('genSpeedText').textContent = `${speed} files / min`;
+
+                        const remainingTasks = totalTasks - totalCompletedTasks;
+                        const remainingMins = speed > 0 ? Math.ceil(remainingTasks / speed) : 0;
+                        document.getElementById('etaText').textContent = remainingMins > 0 ? `~${remainingMins} min remaining` : 'Completing...';
+                    } else if (jobStatus === 'COMPLETED') {
+                        document.getElementById('genSpeedText').textContent = 'Finished';
+                        document.getElementById('etaText').textContent = 'Completed';
+                    } else {
+                        document.getElementById('genSpeedText').textContent = 'Ready';
+                        document.getElementById('etaText').textContent = 'Waiting...';
+                    }
+
+                    // Update Breakdown Table
                     const tbody = document.getElementById('progressTableBody');
                     if (scenes.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No scenes in project.</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No scenes in project workspace.</td></tr>';
                     } else {
                         tbody.innerHTML = scenes.map((s, idx) => `
                             <tr>
@@ -202,13 +285,15 @@
                                 <td><span class="badge ${s.visual_status === 'VISUAL_COMPLETED' ? 'badge-success' : s.visual_status === 'VISUAL_GENERATING' ? 'badge-warning' : 'badge-secondary'}">${s.visual_status || 'PENDING'}</span></td>
                                 <td><span class="badge ${s.voice_status === 'VOICE_COMPLETED' ? 'badge-success' : s.voice_status === 'VOICE_GENERATING' ? 'badge-warning' : 'badge-secondary'}">${s.voice_status || 'PENDING'}</span></td>
                                 <td><span class="badge ${s.overall_status === 'COMPLETED' ? 'badge-success' : s.overall_status === 'FAILED' ? 'badge-danger' : s.overall_status === 'PROCESSING' ? 'badge-warning' : 'badge-secondary'}">${s.overall_status || 'PENDING'}</span></td>
-                                <td class="text-danger truncate" style="max-width:200px;">${s.error_message || '—'}</td>
+                                <td class="truncate" style="max-width:200px;">
+                                    ${s.error_message ? `<span class="text-danger">${s.error_message}</span>` : s.merged_path ? `<span class="text-muted">${s.merged_path}</span>` : '—'}
+                                </td>
                             </tr>
                         `).join('');
                     }
 
-                    // Button visibility
-                    const isPaused = (activeJob.status === 'PAUSED' || project.status === 'PAUSED');
+                    // Button controls visibility
+                    const isPaused = (jobStatus === 'PAUSED');
                     document.getElementById('btnPause').style.display = isPaused ? 'none' : 'inline-flex';
                     document.getElementById('btnResume').style.display = isPaused ? 'inline-flex' : 'none';
 
@@ -217,7 +302,7 @@
                 }
             }
 
-            // Bind Control Actions using dynamic project_id / job_id
+            // Bind Control Actions
             document.getElementById('btnPause').onclick = async () => {
                 try {
                     const targetId = currentJobId || currentProjectId;
@@ -256,7 +341,7 @@
             };
 
             updateProgress();
-            pollInterval = setInterval(updateProgress, 2000);
+            pollInterval = setInterval(updateProgress, 1500);
         });
     </script>
 </body>

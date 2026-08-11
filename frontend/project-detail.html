@@ -68,14 +68,14 @@
                 </div>
 
                 <!-- CSV Upload Drag-and-Drop Zone -->
-                <div class="glass-panel mb-4" style="padding: 2rem;">
+                <div class="glass-panel mb-4" style="padding: 2rem;" id="uploadPanel">
                     <h3>Upload CSV Scene List</h3>
                     <p class="text-muted mt-1">Upload a structured CSV containing columns: <code>id, visual_prompt, voiceover_script, filename, aspect_ratio</code>.</p>
                     
                     <div class="dropzone mt-4" id="dropzone">
-                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📁</div>
-                        <h4>Drag & Drop CSV file here, or click to browse</h4>
-                        <p class="text-muted mt-1" style="font-size: 0.85rem;">Supports UTF-8 CSV files</p>
+                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;" id="dropzoneIcon">📁</div>
+                        <h4 id="dropzoneTitle">Drag & Drop CSV file here, or click to browse</h4>
+                        <p class="text-muted mt-1" style="font-size: 0.85rem;" id="dropzoneSub">Supports UTF-8 CSV files</p>
                         <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
                     </div>
 
@@ -86,6 +86,7 @@
                 <div class="glass-panel" style="padding: 1.5rem;">
                     <div class="flex justify-between items-center mb-4">
                         <h3>Project Scenes (<span id="sceneCount">0</span>)</h3>
+                        <span id="csvSuccessBadge" class="badge badge-success hidden">✔ Scenes Loaded</span>
                     </div>
 
                     <div class="table-container">
@@ -101,7 +102,7 @@
                                 </tr>
                             </thead>
                             <tbody id="scenesTableBody">
-                                <tr><td colspan="6" class="text-muted text-center">No scenes imported. Upload a CSV file above.</td></tr>
+                                <tr><td colspan="6" class="text-muted text-center">No scenes imported. Upload a CSV file or click "Load Sample CSV" above.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -153,8 +154,15 @@
                 const tbody = document.getElementById('scenesTableBody');
                 document.getElementById('sceneCount').textContent = scenes.length;
 
+                if (scenes.length > 0) {
+                    document.getElementById('csvSuccessBadge').classList.remove('hidden');
+                    document.getElementById('dropzoneIcon').textContent = '✅';
+                    document.getElementById('dropzoneTitle').textContent = `CSV Active: ${scenes.length} Scenes Loaded in Workspace`;
+                    document.getElementById('dropzoneSub').textContent = 'Click or drag a new CSV file to overwrite scenes';
+                }
+
                 if (!scenes || scenes.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No scenes imported. Upload a CSV file above.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No scenes imported. Upload a CSV file or click "Load Sample CSV" above.</td></tr>';
                     return;
                 }
 
@@ -193,7 +201,7 @@
                 formData.append('file', file);
 
                 try {
-                    Toast.info('Validating CSV content...');
+                    Toast.info(`Validating ${file.name}...`);
                     const result = await API.post('/api/upload/csv', formData);
 
                     // Show validation status
@@ -203,7 +211,7 @@
                     statusEl.innerHTML = `
                         <div class="stats-grid mb-4">
                             <div class="stat-card blue">
-                                <div class="stat-label">Total Rows</div>
+                                <div class="stat-label">Total CSV Rows</div>
                                 <div class="stat-value blue">${result.total_rows}</div>
                             </div>
                             <div class="stat-card green">
@@ -218,12 +226,11 @@
                     `;
 
                     if (result.valid_rows && result.valid_rows.length > 0) {
-                        // Save scenes directly to current active project in Supabase
                         await API.post(`/api/projects/${currentProjectId}/scenes`, {
                             scenes: result.valid_rows
                         });
 
-                        Toast.success(`Imported ${result.valid_count} scenes into project!`);
+                        Toast.success(`Successfully uploaded ${result.valid_count} scenes from ${file.name}!`);
                         loadProjectDetails();
                     }
                 } catch(e) {
@@ -231,10 +238,54 @@
                 }
             }
 
+            // Load Sample CSV Button
+            document.getElementById('btnLoadSample').onclick = async () => {
+                const sampleScenes = [
+                    {
+                        id: "1",
+                        visual_prompt: "A serene futuristic cyberpunk city at sunset, neon reflections on wet asphalt with glowing holographic billboards",
+                        voiceover_script: "Welcome to the city of tomorrow, where digital dreams illuminate the night sky.",
+                        filename: "scene_001",
+                        aspect_ratio: "16:9"
+                    },
+                    {
+                        id: "2",
+                        visual_prompt: "Cinematic portrait of an ancient warrior standing on a mountain peak during a golden sunrise",
+                        voiceover_script: "Across the peaks of history, victory belonged to those who dared to dream.",
+                        filename: "scene_002",
+                        aspect_ratio: "16:9"
+                    },
+                    {
+                        id: "3",
+                        visual_prompt: "Aerial drone shot of lush tropical rainforest with mist rising over emerald canopy",
+                        voiceover_script: "Deep within the untouched wilderness lies an ecosystem millions of years in the making.",
+                        filename: "scene_003",
+                        aspect_ratio: "16:9"
+                    }
+                ];
+
+                try {
+                    Toast.info("Loading 3 sample CSV scenes into project workspace...");
+                    await API.post(`/api/projects/${currentProjectId}/scenes`, {
+                        scenes: sampleScenes
+                    });
+
+                    Toast.success("Sample CSV scenes loaded successfully!");
+                    loadProjectDetails();
+                } catch(e) {
+                    Toast.error(`Failed to load sample CSV: ${e.message}`);
+                }
+            };
+
             document.getElementById('btnStartGeneration').onclick = async () => {
+                if (currentScenes.length === 0) {
+                    Toast.error("Cannot start generation. Please upload a CSV or load sample scenes first.");
+                    return;
+                }
+
                 try {
                     await API.post('/api/generation/start', { project_id: String(currentProjectId) });
-                    Toast.success('Generation job started!');
+                    Toast.success('Batch generation job started!');
                     window.location.href = `/generation-progress.html?project_id=${currentProjectId}`;
                 } catch(e) {
                     Toast.error(`Start generation failed: ${e.message}`);
