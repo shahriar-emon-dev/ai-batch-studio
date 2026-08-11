@@ -64,6 +64,7 @@
                             <button id="btnPause" class="btn btn-secondary">⏸ Pause</button>
                             <button id="btnResume" class="btn btn-primary" style="display:none;">▶ Resume</button>
                             <button id="btnRetryFailed" class="btn btn-secondary">🔄 Retry Failed</button>
+                            <button id="btnDownloadReport" class="btn btn-secondary">📄 Download Report</button>
                             <button id="btnCancel" class="btn btn-danger">⏹ Cancel Job</button>
                         </div>
                     </div>
@@ -281,10 +282,21 @@
                         tbody.innerHTML = scenes.map((s, idx) => `
                             <tr>
                                 <td class="font-mono">${s.scene_number || (idx + 1)}</td>
-                                <td class="truncate" style="max-width:250px;" title="${s.visual_prompt}">${s.visual_prompt}</td>
-                                <td><span class="badge ${s.visual_status === 'VISUAL_COMPLETED' ? 'badge-success' : s.visual_status === 'VISUAL_GENERATING' ? 'badge-warning' : 'badge-secondary'}">${s.visual_status || 'PENDING'}</span></td>
+                                <td class="truncate" style="max-width:250px;" title="${s.visual_prompt}">${s.visual_prompt || '—'}</td>
+                                <td><span class="badge ${
+                                    s.visual_status === 'VISUAL_COMPLETED' ? 'badge-success' : 
+                                    s.visual_status === 'VISUAL_GENERATING' ? 'badge-warning' : 
+                                    s.visual_status === 'UNSUPPORTED' ? 'badge-unsupported' :
+                                    s.visual_status === 'FAILED' ? 'badge-danger' : 'badge-secondary'
+                                }">${s.visual_status || 'PENDING'}</span></td>
                                 <td><span class="badge ${s.voice_status === 'VOICE_COMPLETED' ? 'badge-success' : s.voice_status === 'VOICE_GENERATING' ? 'badge-warning' : 'badge-secondary'}">${s.voice_status || 'PENDING'}</span></td>
-                                <td><span class="badge ${s.overall_status === 'COMPLETED' ? 'badge-success' : s.overall_status === 'FAILED' ? 'badge-danger' : s.overall_status === 'PROCESSING' ? 'badge-warning' : 'badge-secondary'}">${s.overall_status || 'PENDING'}</span></td>
+                                <td><span class="badge ${
+                                    s.overall_status === 'COMPLETED' ? 'badge-success' : 
+                                    s.overall_status === 'FAILED' ? 'badge-danger' : 
+                                    s.overall_status === 'PROCESSING' ? 'badge-warning' : 
+                                    s.overall_status === 'SKIPPED' ? 'badge-secondary' : 
+                                    s.overall_status === 'UNSUPPORTED' ? 'badge-secondary' : 'badge-secondary'
+                                }">${s.overall_status || 'PENDING'}</span></td>
                                 <td class="truncate" style="max-width:200px;">
                                     ${s.error_message ? `<span class="text-danger">${s.error_message}</span>` : s.merged_path ? `<span class="text-muted">${s.merged_path}</span>` : '—'}
                                 </td>
@@ -328,6 +340,19 @@
                     Toast.info('Retrying failed scenes...');
                     updateProgress();
                 } catch(e) { Toast.error(e.message); }
+            };
+
+            document.getElementById('btnDownloadReport').onclick = async () => {
+                try {
+                    const res = await API.get(`/api/files/report/${currentProjectId}`);
+                    const link = document.createElement('a');
+                    link.href = res.download_url;
+                    link.download = '';
+                    link.click();
+                    Toast.success(`Report ready — ${res.scene_count} scenes exported`);
+                } catch(e) {
+                    Toast.error(`Report failed: ${e.message}`);
+                }
             };
 
             document.getElementById('btnCancel').onclick = async () => {

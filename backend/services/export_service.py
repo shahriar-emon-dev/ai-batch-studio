@@ -1,4 +1,5 @@
 import os
+import csv
 import zipfile
 import tempfile
 import uuid
@@ -50,3 +51,39 @@ async def create_filtered_export_zip(project_name: str, scenes: List[Dict[str, A
                     zipf.write(local_path, arcname)
                     
     return f"/output/{zip_filename}"
+
+async def create_generation_report_csv(project_name: str, scenes: list) -> str:
+    """
+    Generates a CSV report of all scenes with their generation results.
+    Saves to output/ directory and returns the relative URL path.
+    """
+    export_id = str(uuid.uuid4())[:8]
+    clean_name = "".join([c if c.isalnum() else "_" for c in project_name])
+    filename = f"report_{clean_name}_{export_id}.csv"
+    filepath = os.path.join(settings.output_dir, filename)
+
+    fieldnames = [
+        "scene_number",
+        "visual_prompt",
+        "voiceover_script",
+        "aspect_ratio",
+        "media_type",
+        "overall_status",
+        "visual_status",
+        "voice_status",
+        "visual_path",
+        "audio_path",
+        "merged_path",
+        "error_message",
+        "retry_count",
+        "created_at",
+        "updated_at",
+    ]
+
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for scene in scenes:
+            writer.writerow({field: scene.get(field, "") or "" for field in fieldnames})
+
+    return f"/output/{filename}"

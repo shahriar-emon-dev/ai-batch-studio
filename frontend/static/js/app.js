@@ -68,8 +68,7 @@ const API = {
 const DB = {
     async getProjects() { return await API.get('/api/projects'); },
     async getProject(id) { 
-        const res = await API.get(`/api/projects/${id}`); 
-        return res.project;
+        return await API.get(`/api/projects/${id}`);
     },
     async createProject(project) { return null; },
     async updateProject(id, updates) { return null; },

@@ -98,8 +98,30 @@
                             <a href="#" id="downloadZipLink" class="btn btn-primary btn-sm" download>⬇️ Download ZIP Archive</a>
                         </div>
                     </div>
-
                 </div>
+
+                <!-- CSV Generation Report Export Card -->
+                <div class="glass-panel mt-4" style="padding: 2rem;">
+                    <h2>📄 Download Generation Report</h2>
+                    <p class="text-muted mt-1">Export a CSV file containing all scene statuses, asset paths, error messages, and timestamps for the selected project.</p>
+
+                    <div class="form-group mt-4">
+                        <label for="reportProject">Select Project</label>
+                        <select id="reportProject" class="form-select">
+                            <option value="">Loading projects...</option>
+                        </select>
+                    </div>
+
+                    <button id="btnDownloadReportExport" class="btn btn-secondary mt-3">📄 Generate & Download Report CSV</button>
+
+                    <div id="reportResult" class="glass-card mt-4 hidden" style="padding: 1.25rem;">
+                        <p class="text-success" id="reportResultText"></p>
+                        <div class="mt-2">
+                            <a href="#" id="reportDownloadLink" class="btn btn-primary btn-sm" download>⬇️ Download Report CSV</a>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </main>
     </div>
@@ -118,15 +140,26 @@
             });
 
             const projectSelect = document.getElementById('exportProject');
+            const reportSelect = document.getElementById('reportProject');
+
+            function populateReportSelect(projects) {
+                if (!projects || projects.length === 0) {
+                    reportSelect.innerHTML = '<option value="">No projects available</option>';
+                    return;
+                }
+                reportSelect.innerHTML = projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+            }
 
             async function loadProjects() {
                 try {
                     const projects = await API.get('/api/projects');
                     if (!projects || projects.length === 0) {
                         projectSelect.innerHTML = '<option value="">No projects available</option>';
+                        reportSelect.innerHTML = '<option value="">No projects available</option>';
                         return;
                     }
                     projectSelect.innerHTML = projects.map(p => `<option value="${p.id}">${p.name} (${p.completed_scenes || 0}/${p.total_scenes || 0} completed)</option>`).join('');
+                    populateReportSelect(projects);
                 } catch(e) {
                     Toast.error("Failed to load projects for export");
                 }
@@ -167,6 +200,28 @@
                 } finally {
                     btn.disabled = false;
                     btn.textContent = '📦 Generate ZIP Archive';
+                }
+            };
+
+            document.getElementById('btnDownloadReportExport').onclick = async () => {
+                const projectId = reportSelect.value;
+                if (!projectId) { Toast.error('Select a project first'); return; }
+
+                const btn = document.getElementById('btnDownloadReportExport');
+                btn.disabled = true;
+                btn.textContent = 'Generating...';
+
+                try {
+                    const res = await API.get(`/api/files/report/${projectId}`);
+                    document.getElementById('reportResult').classList.remove('hidden');
+                    document.getElementById('reportResultText').textContent = `Report ready — ${res.scene_count} scenes from "${res.project_name}"`;
+                    document.getElementById('reportDownloadLink').href = res.download_url;
+                    Toast.success('Report CSV generated!');
+                } catch(e) {
+                    Toast.error(`Report failed: ${e.message}`);
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = '📄 Generate & Download Report CSV';
                 }
             };
 

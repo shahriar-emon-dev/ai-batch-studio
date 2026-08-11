@@ -10,6 +10,18 @@ router = APIRouter()
 class GenerationRequest(BaseModel):
     project_id: str
 
+async def resolve_project_id(job_id: Union[int, str], client) -> str:
+    """Always resolves to str(project_id) for active_jobs dict lookup."""
+    try:
+        j_id = int(job_id)
+        res = client.table("generation_jobs").select("project_id").eq("id", j_id).execute()
+        if res.data and res.data[0].get("project_id"):
+            return str(res.data[0]["project_id"])
+        # job_id might itself be a project_id passed directly from frontend
+        return str(j_id)
+    except (ValueError, TypeError):
+        return str(job_id)
+
 async def get_active_google_api_key(client) -> str:
     """Fetches and decrypts the active Google API Key for the user."""
     profiles_response = client.table("api_profiles").select("encrypted_credentials").eq("provider", "google").eq("is_active", True).execute()
@@ -54,28 +66,14 @@ async def get_job_status(job_id: int, token: str = Depends(get_token)):
 @router.post("/{job_id}/pause")
 async def pause_job(job_id: Union[int, str], token: str = Depends(get_token)):
     client = get_db_client(token)
-    
-    # Check if job_id is integer ID or project_id string
-    try:
-        j_id = int(job_id)
-        res = client.table("generation_jobs").select("project_id").eq("id", j_id).execute()
-        project_id = str(res.data[0]["project_id"]) if res.data else str(j_id)
-    except ValueError:
-        project_id = str(job_id)
-        
+    project_id = await resolve_project_id(job_id, client)
     pause_generation(project_id)
     return {"status": "paused", "project_id": project_id}
 
 @router.post("/{job_id}/resume")
 async def resume_job(job_id: Union[int, str], token: str = Depends(get_token), user_id: str = Depends(verify_token)):
     client = get_db_client(token)
-    
-    try:
-        j_id = int(job_id)
-        res = client.table("generation_jobs").select("project_id").eq("id", j_id).execute()
-        project_id = str(res.data[0]["project_id"]) if res.data else str(j_id)
-    except ValueError:
-        project_id = str(job_id)
+    project_id = await resolve_project_id(job_id, client)
     
     scenes_response = client.table("scenes").select("*").eq("project_id", project_id).in_("overall_status", ["pending", "PENDING", "failed", "FAILED"]).execute()
     scenes = scenes_response.data or []
@@ -90,25 +88,14 @@ async def resume_job(job_id: Union[int, str], token: str = Depends(get_token), u
 @router.post("/{job_id}/cancel")
 async def cancel_job(job_id: Union[int, str], token: str = Depends(get_token)):
     client = get_db_client(token)
-    try:
-        j_id = int(job_id)
-        res = client.table("generation_jobs").select("project_id").eq("id", j_id).execute()
-        project_id = str(res.data[0]["project_id"]) if res.data else str(j_id)
-    except ValueError:
-        project_id = str(job_id)
-        
+    project_id = await resolve_project_id(job_id, client)
     cancel_generation(project_id)
     return {"status": "cancelled", "project_id": project_id}
 
 @router.post("/{job_id}/retry")
 async def retry_job(job_id: Union[int, str], token: str = Depends(get_token), user_id: str = Depends(verify_token)):
     client = get_db_client(token)
-    try:
-        j_id = int(job_id)
-        res = client.table("generation_jobs").select("project_id").eq("id", j_id).execute()
-        project_id = str(res.data[0]["project_id"]) if res.data else str(j_id)
-    except ValueError:
-        project_id = str(job_id)
+    project_id = await resolve_project_id(job_id, client)
     
     scenes_response = client.table("scenes").select("*").eq("project_id", project_id).in_("overall_status", ["failed", "FAILED"]).execute()
     scenes = scenes_response.data or []
