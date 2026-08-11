@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Generation Progress - AI Content Studio</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/config.js"></script>
+    <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                AI Content <span>Studio</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/dashboard.html" class="nav-item">
+                    <i>📊</i> Dashboard
+                </a>
+                <a href="/projects.html" class="nav-item">
+                    <i>📁</i> Projects
+                </a>
+                <a href="/generation-progress.html" class="nav-item active">
+                    <i>⚡</i> Batch Generation
+                </a>
+                <a href="/assets.html" class="nav-item">
+                    <i>🖼️</i> Asset Browser
+                </a>
+                <a href="/export.html" class="nav-item">
+                    <i>📦</i> Selective Export
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="/settings.html" class="nav-item">
+                    <i>⚙️</i> Settings
+                </a>
+                <a href="#" id="logoutBtn" class="nav-item">
+                    <i>🚪</i> Logout
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="page-title" id="jobTitle">Batch Generation Progress</div>
+                <div class="user-menu">
+                    <span id="userEmail">Loading...</span>
+                </div>
+            </header>
+
+            <div class="page-container">
+                <!-- Controls & Progress Banner -->
+                <div class="glass-panel mb-4" style="padding: 1.5rem;">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 id="projNameHeading">Project Generation</h2>
+                            <p class="text-muted mt-1" id="jobStatusText">Status: Idle</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="btnPause" class="btn btn-secondary">⏸ Pause</button>
+                            <button id="btnResume" class="btn btn-primary" style="display:none;">▶ Resume</button>
+                            <button id="btnRetryFailed" class="btn btn-secondary">🔄 Retry Failed</button>
+                            <button id="btnCancel" class="btn btn-danger">⏹ Cancel Job</button>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="progress-bar-bg mb-2">
+                        <div id="progressFill" class="progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="flex justify-between text-muted" style="font-size:0.85rem;">
+                        <span id="progressPctText">0% Complete</span>
+                        <span id="progressCountText">0 / 0 Tasks Finished</span>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="stats-grid mb-4">
+                    <div class="stat-card blue">
+                        <div class="stat-label">Total Scenes</div>
+                        <div class="stat-value blue" id="statTotal">0</div>
+                    </div>
+                    <div class="stat-card green">
+                        <div class="stat-label">Completed</div>
+                        <div class="stat-value green" id="statCompleted">0</div>
+                    </div>
+                    <div class="stat-card purple">
+                        <div class="stat-label">Processing</div>
+                        <div class="stat-value purple" id="statProcessing">0</div>
+                    </div>
+                    <div class="stat-card red">
+                        <div class="stat-label">Failed</div>
+                        <div class="stat-value red" id="statFailed">0</div>
+                    </div>
+                </div>
+
+                <!-- Scene Breakdown Table -->
+                <div class="glass-panel" style="padding: 1.5rem;">
+                    <h3>Scene Status Breakdown</h3>
+                    <div class="table-container mt-4">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Visual Prompt</th>
+                                    <th>Visual Status</th>
+                                    <th>Voice Status</th>
+                                    <th>Overall Status</th>
+                                    <th>Error Message</th>
+                                </tr>
+                            </thead>
+                            <tbody id="progressTableBody">
+                                <tr><td colspan="6" class="text-muted text-center">Loading progress...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let currentProjectId = null;
+        let pollInterval = null;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await Auth.requireAuth();
+            if (!user) return;
+
+            document.getElementById('userEmail').textContent = user.email;
+
+            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                await Auth.signOut();
+                window.location.href = '/login.html';
+            });
+
+            const urlParams = new URLSearchParams(window.location.search);
+            currentProjectId = urlParams.get('project_id');
+
+            if (!currentProjectId) {
+                // Fetch first active or recent project
+                try {
+                    const projects = await API.get('/api/projects');
+                    if (projects && projects.length > 0) {
+                        currentProjectId = projects[0].id;
+                    } else {
+                        window.location.href = '/projects.html';
+                        return;
+                    }
+                } catch(e) {
+                    window.location.href = '/projects.html';
+                    return;
+                }
+            }
+
+            async function updateProgress() {
+                try {
+                    const project = await API.get(`/api/projects/${currentProjectId}`);
+                    document.getElementById('projNameHeading').textContent = project.name;
+                    document.getElementById('jobStatusText').textContent = `Status: ${project.status || 'PENDING'}`;
+
+                    const scenes = project.scenes || [];
+                    const total = scenes.length;
+                    const completed = scenes.filter(s => s.overall_status === 'COMPLETED').length;
+                    const failed = scenes.filter(s => s.overall_status === 'FAILED').length;
+                    const processing = scenes.filter(s => s.overall_status === 'PROCESSING' || s.overall_status === 'VISUAL_GENERATING' || s.overall_status === 'VOICE_GENERATING').length;
+                    const pending = total - (completed + failed + processing);
+
+                    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+                    document.getElementById('progressFill').style.width = `${pct}%`;
+                    document.getElementById('progressPctText').textContent = `${pct}% Complete`;
+                    document.getElementById('progressCountText').textContent = `${completed} / ${total} Tasks Finished`;
+
+                    document.getElementById('statTotal').textContent = total;
+                    document.getElementById('statCompleted').textContent = completed;
+                    document.getElementById('statProcessing').textContent = processing;
+                    document.getElementById('statFailed').textContent = failed;
+
+                    // Update Table
+                    const tbody = document.getElementById('progressTableBody');
+                    if (scenes.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No scenes in project.</td></tr>';
+                    } else {
+                        tbody.innerHTML = scenes.map((s, idx) => `
+                            <tr>
+                                <td class="font-mono">${s.scene_number || (idx + 1)}</td>
+                                <td class="truncate" style="max-width:250px;" title="${s.visual_prompt}">${s.visual_prompt}</td>
+                                <td><span class="badge ${s.visual_status === 'VISUAL_COMPLETED' ? 'badge-success' : s.visual_status === 'VISUAL_GENERATING' ? 'badge-warning' : 'badge-secondary'}">${s.visual_status || 'PENDING'}</span></td>
+                                <td><span class="badge ${s.voice_status === 'VOICE_COMPLETED' ? 'badge-success' : s.voice_status === 'VOICE_GENERATING' ? 'badge-warning' : 'badge-secondary'}">${s.voice_status || 'PENDING'}</span></td>
+                                <td><span class="badge ${s.overall_status === 'COMPLETED' ? 'badge-success' : s.overall_status === 'FAILED' ? 'badge-danger' : s.overall_status === 'PROCESSING' ? 'badge-warning' : 'badge-secondary'}">${s.overall_status || 'PENDING'}</span></td>
+                                <td class="text-danger truncate" style="max-width:200px;">${s.error_message || '—'}</td>
+                            </tr>
+                        `).join('');
+                    }
+
+                    // Button visibility
+                    const isPaused = project.status === 'PAUSED';
+                    document.getElementById('btnPause').style.display = isPaused ? 'none' : 'inline-flex';
+                    document.getElementById('btnResume').style.display = isPaused ? 'inline-flex' : 'none';
+
+                } catch(e) {
+                    console.error("Progress update error:", e);
+                }
+            }
+
+            // Bind Control Actions
+            document.getElementById('btnPause').onclick = async () => {
+                try {
+                    await API.post(`/api/generation/1/pause`, {});
+                    Toast.info('Job pause signal sent');
+                    updateProgress();
+                } catch(e) { Toast.error(e.message); }
+            };
+
+            document.getElementById('btnResume').onclick = async () => {
+                try {
+                    await API.post(`/api/generation/1/resume`, {});
+                    Toast.success('Job resumed');
+                    updateProgress();
+                } catch(e) { Toast.error(e.message); }
+            };
+
+            document.getElementById('btnRetryFailed').onclick = async () => {
+                try {
+                    await API.post(`/api/generation/1/retry`, {});
+                    Toast.info('Retrying failed scenes...');
+                    updateProgress();
+                } catch(e) { Toast.error(e.message); }
+            };
+
+            document.getElementById('btnCancel').onclick = async () => {
+                if (!confirm('Are you sure you want to cancel this generation job?')) return;
+                try {
+                    await API.post(`/api/generation/1/cancel`, {});
+                    Toast.warning('Job cancelled');
+                    updateProgress();
+                } catch(e) { Toast.error(e.message); }
+            };
+
+            updateProgress();
+            pollInterval = setInterval(updateProgress, 2000);
+        });
+    </script>
+</body>
+</html>

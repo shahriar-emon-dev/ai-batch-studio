@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asset Library - AI Content Studio</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/config.js"></script>
+    <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                AI Content <span>Studio</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/dashboard.html" class="nav-item">
+                    <i>📊</i> Dashboard
+                </a>
+                <a href="/projects.html" class="nav-item">
+                    <i>📁</i> Projects
+                </a>
+                <a href="/generation-progress.html" class="nav-item">
+                    <i>⚡</i> Batch Generation
+                </a>
+                <a href="/assets.html" class="nav-item active">
+                    <i>🖼️</i> Asset Browser
+                </a>
+                <a href="/export.html" class="nav-item">
+                    <i>📦</i> Selective Export
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="/settings.html" class="nav-item">
+                    <i>⚙️</i> Settings
+                </a>
+                <a href="#" id="logoutBtn" class="nav-item">
+                    <i>🚪</i> Logout
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="page-title">Asset Library Browser</div>
+                <div class="user-menu">
+                    <span id="userEmail">Loading...</span>
+                </div>
+            </header>
+
+            <div class="page-container">
+                <!-- Filters Bar -->
+                <div class="glass-panel mb-4" style="padding: 1.25rem;">
+                    <div class="flex justify-between items-center">
+                        <div class="flex gap-md items-center">
+                            <label><strong>Project:</strong></label>
+                            <select id="projectSelect" class="form-select" style="width: auto; min-width: 200px;">
+                                <option value="">Loading projects...</option>
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-secondary btn-sm filter-btn active" data-filter="all">All Assets</button>
+                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="image">Images</button>
+                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="audio">Voiceovers</button>
+                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="video">Videos</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Asset Cards Grid -->
+                <div id="assetsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;">
+                    <div class="text-muted">Select a project above to browse assets.</div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let currentFilter = 'all';
+        let currentProjectScenes = [];
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await Auth.requireAuth();
+            if (!user) return;
+
+            document.getElementById('userEmail').textContent = user.email;
+
+            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                await Auth.signOut();
+                window.location.href = '/login.html';
+            });
+
+            const projectSelect = document.getElementById('projectSelect');
+
+            async function loadProjects() {
+                try {
+                    const projects = await API.get('/api/projects');
+                    if (!projects || projects.length === 0) {
+                        projectSelect.innerHTML = '<option value="">No projects found</option>';
+                        return;
+                    }
+                    projectSelect.innerHTML = projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+                    loadAssetsForProject(projects[0].id);
+                } catch(e) {
+                    Toast.error("Failed to load projects");
+                }
+            }
+
+            projectSelect.onchange = () => {
+                if (projectSelect.value) loadAssetsForProject(projectSelect.value);
+            };
+
+            async function loadAssetsForProject(projectId) {
+                try {
+                    const project = await API.get(`/api/projects/${projectId}`);
+                    currentProjectScenes = project.scenes || [];
+                    renderAssetsGrid();
+                } catch(e) {
+                    Toast.error("Failed to load project assets");
+                }
+            }
+
+            function renderAssetsGrid() {
+                const grid = document.getElementById('assetsGrid');
+                let items = [];
+
+                currentProjectScenes.forEach(s => {
+                    if (s.visual_path && (currentFilter === 'all' || currentFilter === 'image')) {
+                        items.push({ type: 'image', path: s.visual_path, scene_number: s.scene_number, prompt: s.visual_prompt });
+                    }
+                    if (s.audio_path && (currentFilter === 'all' || currentFilter === 'audio')) {
+                        items.push({ type: 'audio', path: s.audio_path, scene_number: s.scene_number, script: s.voiceover_script });
+                    }
+                    if (s.merged_path && (currentFilter === 'all' || currentFilter === 'video')) {
+                        items.push({ type: 'video', path: s.merged_path, scene_number: s.scene_number, prompt: s.visual_prompt });
+                    }
+                });
+
+                if (items.length === 0) {
+                    grid.innerHTML = '<div class="glass-card text-muted" style="padding:2rem; grid-column: 1 / -1;">No assets generated for this filter selection yet.</div>';
+                    return;
+                }
+
+                grid.innerHTML = items.map(item => {
+                    if (item.type === 'image') {
+                        return `
+                            <div class="glass-card" style="padding: 1rem;">
+                                <div style="aspect-ratio: 16/9; background:#000; overflow:hidden; border-radius:8px; margin-bottom:0.75rem;">
+                                    <img src="${item.path}" style="width:100%; height:100%; object-fit:cover;">
+                                </div>
+                                <div>
+                                    <span class="badge badge-secondary">Scene ${item.scene_number} — PNG</span>
+                                    <p class="text-muted mt-1 truncate" style="font-size:0.8rem;" title="${item.prompt}">${item.prompt}</p>
+                                </div>
+                            </div>
+                        `;
+                    } else if (item.type === 'audio') {
+                        return `
+                            <div class="glass-card" style="padding: 1.25rem;">
+                                <span class="badge badge-success mb-2">Scene ${item.scene_number} — MP3 Voiceover</span>
+                                <audio controls style="width:100%; margin: 0.5rem 0;">
+                                    <source src="${item.path}" type="audio/mp3">
+                                </audio>
+                                <p class="text-muted truncate" style="font-size:0.8rem;" title="${item.script}">${item.script || 'Voiceover Audio'}</p>
+                            </div>
+                        `;
+                    } else if (item.type === 'video') {
+                        return `
+                            <div class="glass-card" style="padding: 1rem;">
+                                <div style="aspect-ratio: 16/9; background:#000; overflow:hidden; border-radius:8px; margin-bottom:0.75rem;">
+                                    <video controls style="width:100%; height:100%; object-fit:cover;">
+                                        <source src="${item.path}" type="video/mp4">
+                                    </video>
+                                </div>
+                                <div>
+                                    <span class="badge badge-warning">Scene ${item.scene_number} — Merged MP4</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }).join('');
+            }
+
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentFilter = btn.dataset.filter;
+                    renderAssetsGrid();
+                };
+            });
+
+            loadProjects();
+        });
+    </script>
+</body>
+</html>

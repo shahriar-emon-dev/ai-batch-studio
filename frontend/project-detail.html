@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Workspace - AI Content Studio</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/config.js"></script>
+    <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                AI Content <span>Studio</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/dashboard.html" class="nav-item">
+                    <i>📊</i> Dashboard
+                </a>
+                <a href="/projects.html" class="nav-item active">
+                    <i>📁</i> Projects
+                </a>
+                <a href="/generation-progress.html" class="nav-item">
+                    <i>⚡</i> Batch Generation
+                </a>
+                <a href="/assets.html" class="nav-item">
+                    <i>🖼️</i> Asset Browser
+                </a>
+                <a href="/export.html" class="nav-item">
+                    <i>📦</i> Selective Export
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="/settings.html" class="nav-item">
+                    <i>⚙️</i> Settings
+                </a>
+                <a href="#" id="logoutBtn" class="nav-item">
+                    <i>🚪</i> Logout
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="page-title" id="projectNameHeading">Loading Project Workspace...</div>
+                <div class="user-menu">
+                    <button id="btnStartGeneration" class="btn btn-primary btn-sm">⚡ Start Batch Generation</button>
+                    <span id="userEmail">Loading...</span>
+                </div>
+            </header>
+
+            <div class="page-container">
+                <!-- Project Summary Banner -->
+                <div class="glass-panel mb-4" style="padding: 1.5rem;">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h2 id="projTitle">Project Title</h2>
+                            <p class="text-muted mt-1" id="projSub">Mode: IMAGE_VOICE | Status: PENDING</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="btnLoadSample" class="btn btn-secondary btn-sm">📄 Load Sample CSV</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CSV Upload Drag-and-Drop Zone -->
+                <div class="glass-panel mb-4" style="padding: 2rem;">
+                    <h3>Upload CSV Scene List</h3>
+                    <p class="text-muted mt-1">Upload a structured CSV containing columns: <code>id, visual_prompt, voiceover_script, filename, aspect_ratio</code>.</p>
+                    
+                    <div class="dropzone mt-4" id="dropzone">
+                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📁</div>
+                        <h4>Drag & Drop CSV file here, or click to browse</h4>
+                        <p class="text-muted mt-1" style="font-size: 0.85rem;">Supports UTF-8 CSV files</p>
+                        <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+                    </div>
+
+                    <div id="uploadStatus" class="mt-4 hidden"></div>
+                </div>
+
+                <!-- Scene Editor Table -->
+                <div class="glass-panel" style="padding: 1.5rem;">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3>Project Scenes (<span id="sceneCount">0</span>)</h3>
+                    </div>
+
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Visual Prompt</th>
+                                    <th>Voiceover Script</th>
+                                    <th>Aspect Ratio</th>
+                                    <th>Media Type</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scenesTableBody">
+                                <tr><td colspan="6" class="text-muted text-center">No scenes imported. Upload a CSV file above.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let currentProjectId = null;
+        let currentScenes = [];
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await Auth.requireAuth();
+            if (!user) return;
+
+            document.getElementById('userEmail').textContent = user.email;
+
+            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                await Auth.signOut();
+                window.location.href = '/login.html';
+            });
+
+            const urlParams = new URLSearchParams(window.location.search);
+            currentProjectId = urlParams.get('id');
+
+            if (!currentProjectId) {
+                window.location.href = '/projects.html';
+                return;
+            }
+
+            async function loadProjectDetails() {
+                try {
+                    const project = await API.get(`/api/projects/${currentProjectId}`);
+                    document.getElementById('projectNameHeading').textContent = `Workspace: ${project.name}`;
+                    document.getElementById('projTitle').textContent = project.name;
+                    document.getElementById('projSub').textContent = `Mode: ${project.mode || 'IMAGE_VOICE'} | Status: ${project.status || 'PENDING'}`;
+                    
+                    currentScenes = project.scenes || [];
+                    renderScenesTable(currentScenes);
+                } catch(e) {
+                    Toast.error("Failed to load project details");
+                }
+            }
+
+            function renderScenesTable(scenes) {
+                const tbody = document.getElementById('scenesTableBody');
+                document.getElementById('sceneCount').textContent = scenes.length;
+
+                if (!scenes || scenes.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No scenes imported. Upload a CSV file above.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = scenes.map((s, idx) => `
+                    <tr>
+                        <td class="font-mono">${s.scene_number || (idx + 1)}</td>
+                        <td class="truncate" style="max-width:250px;" title="${s.visual_prompt}">${s.visual_prompt}</td>
+                        <td class="truncate" style="max-width:250px;" title="${s.voiceover_script}">${s.voiceover_script || '—'}</td>
+                        <td>${s.aspect_ratio || '16:9'}</td>
+                        <td><span class="badge badge-secondary">${s.media_type || 'image'}</span></td>
+                        <td><span class="badge ${s.overall_status === 'COMPLETED' ? 'badge-success' : s.overall_status === 'FAILED' ? 'badge-danger' : 'badge-secondary'}">${s.overall_status || 'PENDING'}</span></td>
+                    </tr>
+                `).join('');
+            }
+
+            // CSV Dropzone Events
+            const dropzone = document.getElementById('dropzone');
+            const csvInput = document.getElementById('csvFileInput');
+
+            dropzone.onclick = () => csvInput.click();
+
+            dropzone.ondragover = (e) => { e.preventDefault(); dropzone.classList.add('dragover'); };
+            dropzone.ondragleave = () => dropzone.classList.remove('dragover');
+            dropzone.ondrop = (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+                if (e.dataTransfer.files.length) handleCsvUpload(e.dataTransfer.files[0]);
+            };
+
+            csvInput.onchange = () => {
+                if (csvInput.files.length) handleCsvUpload(csvInput.files[0]);
+            };
+
+            async function handleCsvUpload(file) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    Toast.info('Validating CSV content...');
+                    const result = await API.post('/api/upload/csv', formData);
+
+                    // Show validation status
+                    const statusEl = document.getElementById('uploadStatus');
+                    statusEl.classList.remove('hidden');
+
+                    statusEl.innerHTML = `
+                        <div class="stats-grid mb-4">
+                            <div class="stat-card blue">
+                                <div class="stat-label">Total Rows</div>
+                                <div class="stat-value blue">${result.total_rows}</div>
+                            </div>
+                            <div class="stat-card green">
+                                <div class="stat-label">Valid Scenes</div>
+                                <div class="stat-value green">${result.valid_count}</div>
+                            </div>
+                            <div class="stat-card red">
+                                <div class="stat-label">Invalid Rows</div>
+                                <div class="stat-value red">${result.invalid_count}</div>
+                            </div>
+                        </div>
+                    `;
+
+                    if (result.valid_rows && result.valid_rows.length > 0) {
+                        // Save scenes to project via backend
+                        await API.post('/api/projects', {
+                            name: document.getElementById('projTitle').textContent,
+                            scenes: result.valid_rows
+                        });
+
+                        Toast.success(`Imported ${result.valid_count} scenes!`);
+                        loadProjectDetails();
+                    }
+                } catch(e) {
+                    Toast.error(`CSV Upload Failed: ${e.message}`);
+                }
+            }
+
+            document.getElementById('btnStartGeneration').onclick = async () => {
+                try {
+                    await API.post('/api/generation/start', { project_id: String(currentProjectId) });
+                    Toast.success('Generation job started!');
+                    window.location.href = `/generation-progress.html?project_id=${currentProjectId}`;
+                } catch(e) {
+                    Toast.error(`Start generation failed: ${e.message}`);
+                }
+            };
+
+            loadProjectDetails();
+        });
+    </script>
+</body>
+</html>

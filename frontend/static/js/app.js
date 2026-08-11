@@ -12,7 +12,9 @@
 // ============================================================
 const API = {
     async getToken() {
-        const { data } = await window.api.supabase.auth.getSession();
+        const client = window.supabaseClient || (window.api && window.api.supabase);
+        if (!client) return null;
+        const { data } = await client.auth.getSession();
         return data?.session?.access_token;
     },
 

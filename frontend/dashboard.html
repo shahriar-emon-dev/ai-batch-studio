@@ -3,35 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - AI Batch Studio</title>
-    <link rel="stylesheet" href="static/css/style.css">
+    <title>Dashboard - AI Content Studio</title>
+    <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="config.js"></script>
-    <script src="static/js/api.js" defer></script>
+    <script src="/config.js"></script>
+    <script src="/static/js/app.js" defer></script>
 </head>
 <body>
     <div class="app-layout">
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-brand">
-                AI Batch Studio
+                AI Content <span>Studio</span>
             </div>
             <nav class="sidebar-nav">
-                <a href="dashboard.html" class="nav-item active">
+                <a href="/dashboard.html" class="nav-item active">
                     <i>📊</i> Dashboard
                 </a>
-                <a href="projects.html" class="nav-item">
+                <a href="/projects.html" class="nav-item">
                     <i>📁</i> Projects
                 </a>
-                <a href="#" class="nav-item">
-                    <i>⚡</i> Generation
+                <a href="/generation-progress.html" class="nav-item">
+                    <i>⚡</i> Batch Generation
                 </a>
-                <a href="#" class="nav-item">
-                    <i>📂</i> Files & Exports
+                <a href="/assets.html" class="nav-item">
+                    <i>🖼️</i> Asset Browser
+                </a>
+                <a href="/export.html" class="nav-item">
+                    <i>📦</i> Selective Export
                 </a>
             </nav>
             <div class="sidebar-footer">
-                <a href="settings.html" class="nav-item">
+                <a href="/settings.html" class="nav-item">
                     <i>⚙️</i> Settings
                 </a>
                 <a href="#" id="logoutBtn" class="nav-item">
@@ -43,71 +46,167 @@
         <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
-                <div class="page-title">Dashboard</div>
+                <div class="page-title">Dashboard Overview</div>
                 <div class="user-menu">
                     <span id="userEmail">Loading...</span>
                 </div>
             </header>
-            
+
             <div class="page-container">
-                <div class="glass-panel" style="padding: 2rem;">
-                    <h2>Welcome to AI Batch Studio</h2>
-                    <p class="text-muted">Manage your AI content generation workflows from this central hub.</p>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
-                        <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
-                            <h3 style="font-size: 2rem; color: var(--primary-color);" id="statProjects">0</h3>
-                            <p>Total Projects</p>
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card blue">
+                        <div class="stat-label">Total Projects</div>
+                        <div class="stat-value blue" id="statProjects">0</div>
+                    </div>
+                    <div class="stat-card purple">
+                        <div class="stat-label">Active Jobs</div>
+                        <div class="stat-value purple" id="statActiveJobs">0</div>
+                    </div>
+                    <div class="stat-card green">
+                        <div class="stat-label">Completed Scenes</div>
+                        <div class="stat-value green" id="statCompleted">0</div>
+                    </div>
+                    <div class="stat-card red">
+                        <div class="stat-label">Failed Scenes</div>
+                        <div class="stat-value red" id="statFailed">0</div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions & System Health -->
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                    <div class="glass-panel" style="padding: 1.5rem;">
+                        <h3>Quick Production Actions</h3>
+                        <p class="text-muted mt-2" style="font-size: 0.9rem;">Start a new AI media production workflow or upload structured CSV prompts.</p>
+                        <div class="flex gap-md mt-4">
+                            <a href="/projects.html" class="btn btn-primary">➕ Create Project</a>
+                            <a href="/settings.html" class="btn btn-secondary">🔑 API Profiles</a>
+                            <a href="/export.html" class="btn btn-secondary">📦 Export Assets</a>
                         </div>
-                        <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
-                            <h3 style="font-size: 2rem; color: var(--success-color);" id="statScenes">0</h3>
-                            <p>Total Scenes Generated</p>
-                        </div>
-                        <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
-                            <h3 style="font-size: 2rem; color: var(--warning-color);" id="statActive">0</h3>
-                            <p>Active Jobs</p>
+                    </div>
+
+                    <div class="glass-panel" style="padding: 1.5rem;">
+                        <h3>System & API Health</h3>
+                        <div class="mt-3 flex flex-column gap-2" id="healthWidget">
+                            <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
+                                <span>FastAPI Backend:</span> <span class="badge badge-success">OK</span>
+                            </div>
+                            <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
+                                <span>Supabase Auth & DB:</span> <span class="badge badge-success">Connected</span>
+                            </div>
+                            <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
+                                <span>Google AI Profile:</span> <span id="apiStatusBadge" class="badge badge-secondary">Checking...</span>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- Recent Projects List -->
+                <div class="glass-panel" style="padding: 1.5rem;">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3>Recent Projects</h3>
+                        <a href="/projects.html" class="btn btn-ghost btn-sm">View All Projects →</a>
+                    </div>
+
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Project Name</th>
+                                    <th>Status</th>
+                                    <th>Completed Scenes</th>
+                                    <th>Created Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="projectsTableBody">
+                                <tr><td colspan="5" class="text-muted text-center">Loading projects...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
             </div>
         </main>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const user = await window.api.requireAuth();
+            const user = await Auth.requireAuth();
             if (!user) return;
-            
+
             document.getElementById('userEmail').textContent = user.email;
 
             document.getElementById('logoutBtn').addEventListener('click', async (e) => {
                 e.preventDefault();
-                await window.api.logout();
-                window.location.href = 'login.html';
+                await Auth.signOut();
+                window.location.href = '/login.html';
             });
 
-            // Fetch stats from backend
-            try {
-                const { data } = await window.api.supabase.auth.getSession();
-                const token = data?.session?.access_token;
-                
-                const res = await fetch(`${window.API_BASE_URL || 'http://localhost:8000'}/api/projects`, {
-                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-                });
-
-                if (res.ok) {
-                    const projects = await res.json();
+            // Load Dashboard Statistics & Recent Projects
+            async function loadDashboardData() {
+                try {
+                    const projects = await API.get('/api/projects');
                     document.getElementById('statProjects').textContent = projects.length;
-                    const activeJobs = projects.filter(j => j.status === 'generating' || j.status === 'PROCESSING').length;
-                    document.getElementById('statActive').textContent = activeJobs;
 
-                    let totalScenes = 0;
-                    projects.forEach(j => { totalScenes += (j.completed_scenes || 0); });
-                    document.getElementById('statScenes').textContent = totalScenes;
+                    let totalCompleted = 0;
+                    let totalFailed = 0;
+                    let activeCount = 0;
+
+                    const projectsTableBody = document.getElementById('projectsTableBody');
+                    
+                    if (projects.length === 0) {
+                        projectsTableBody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No projects found. Create your first project to get started.</td></tr>';
+                    } else {
+                        projectsTableBody.innerHTML = projects.slice(0, 5).map(p => {
+                            totalCompleted += (p.completed_scenes || 0);
+                            totalFailed += (p.failed_scenes || 0);
+                            if (p.status === 'PROCESSING' || p.status === 'generating') activeCount++;
+
+                            const statusCls = (p.status === 'COMPLETED' || p.status === 'completed') ? 'badge-success'
+                                : (p.status === 'PROCESSING' || p.status === 'generating') ? 'badge-warning'
+                                : (p.status === 'FAILED' || p.status === 'failed') ? 'badge-danger'
+                                : 'badge-secondary';
+
+                            return `
+                                <tr>
+                                    <td><strong>${p.name}</strong></td>
+                                    <td><span class="badge ${statusCls}">${p.status || 'PENDING'}</span></td>
+                                    <td>${p.completed_scenes || 0} / ${p.total_scenes || 0}</td>
+                                    <td>${new Date(p.created_at).toLocaleDateString()}</td>
+                                    <td>
+                                        <a href="/project-detail.html?id=${p.id}" class="btn btn-secondary btn-sm">Open Workspace</a>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+
+                    document.getElementById('statCompleted').textContent = totalCompleted;
+                    document.getElementById('statFailed').textContent = totalFailed;
+                    document.getElementById('statActiveJobs').textContent = activeCount;
+
+                } catch(e) {
+                    console.error("Dashboard error:", e);
                 }
-            } catch (err) {
-                console.error("Failed to fetch dashboard stats", err);
+
+                // Check API status
+                try {
+                    const settings = await API.get('/api/settings');
+                    const badge = document.getElementById('apiStatusBadge');
+                    if (settings.has_api_key) {
+                        badge.className = 'badge badge-success';
+                        badge.textContent = 'Active';
+                    } else {
+                        badge.className = 'badge badge-danger';
+                        badge.textContent = 'Not Configured';
+                    }
+                } catch(e) {
+                    console.error("Settings error:", e);
+                }
             }
+
+            loadDashboardData();
         });
     </script>
 </body>
