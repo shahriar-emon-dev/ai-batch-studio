@@ -1,7 +1,14 @@
+import sys
+import os
+
+# Ensure project root is in sys.path so 'from backend...' imports work from any working directory
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import os
 
 from backend.config import settings
 
