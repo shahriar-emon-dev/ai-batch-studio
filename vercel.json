@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "cleanUrls": true,
   "builds": [
     {
       "src": "frontend/**",
@@ -7,13 +8,21 @@
     }
   ],
   "routes": [
-    {
-      "src": "/",
-      "dest": "/frontend/login.html"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/frontend/$1"
-    }
+    { "src": "/", "dest": "/frontend/login.html" },
+    { "src": "/login", "dest": "/frontend/login.html" },
+    { "src": "/register", "dest": "/frontend/register.html" },
+    { "src": "/dashboard", "dest": "/frontend/dashboard.html" },
+    { "src": "/settings", "dest": "/frontend/settings.html" },
+    { "src": "/projects", "dest": "/frontend/projects.html" },
+    { "src": "/forgot-password", "dest": "/frontend/forgot-password.html" },
+    { "src": "/reset-password", "dest": "/frontend/reset-password.html" },
+    { "src": "/app", "dest": "/frontend/index.html" },
+    { "src": "/static/(.*)", "dest": "/frontend/static/$1" },
+    { "src": "/config.js", "dest": "/frontend/config.js" },
+    { "src": "/(.*\\.html)", "dest": "/frontend/$1" },
+    { "src": "/(.*\\.js)", "dest": "/frontend/$1" },
+    { "src": "/(.*\\.css)", "dest": "/frontend/$1" },
+    { "src": "/(.*\\.csv)", "dest": "/frontend/$1" },
+    { "src": "/(.*)", "dest": "/frontend/$1" }
   ]
 }
