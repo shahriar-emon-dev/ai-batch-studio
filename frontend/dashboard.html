@@ -86,16 +86,19 @@
                 window.location.href = 'login.html';
             });
 
-            // Fetch stats directly from Supabase
+            // Fetch stats from backend
             try {
-                const { data: projects } = await window.api.supabase
-                    .from('projects')
-                    .select('id, status, completed_scenes')
-                    .eq('user_id', user.id);
+                const { data } = await window.api.supabase.auth.getSession();
+                const token = data?.session?.access_token;
+                
+                const res = await fetch(`${window.API_BASE_URL || 'http://localhost:8000'}/api/projects`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
 
-                if (projects) {
+                if (res.ok) {
+                    const projects = await res.json();
                     document.getElementById('statProjects').textContent = projects.length;
-                    const activeJobs = projects.filter(j => j.status === 'PROCESSING').length;
+                    const activeJobs = projects.filter(j => j.status === 'generating' || j.status === 'PROCESSING').length;
                     document.getElementById('statActive').textContent = activeJobs;
 
                     let totalScenes = 0;

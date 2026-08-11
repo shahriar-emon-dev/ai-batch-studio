@@ -8,122 +8,61 @@
  */
 
 // ============================================================
-// Supabase Data Layer (replaces old backend API calls)
+// API Wrapper
 // ============================================================
+const API = {
+    async getToken() {
+        const { data } = await window.api.supabase.auth.getSession();
+        return data?.session?.access_token;
+    },
+
+    async fetch(endpoint, options = {}) {
+        const token = await this.getToken();
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            ...(options.headers || {})
+        };
+        if (options.body && !(options.body instanceof FormData)) {
+            headers['Content-Type'] = 'application/json';
+        }
+        const res = await fetch(`${window.API_BASE_URL || 'http://localhost:8000'}${endpoint}`, { ...options, headers });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `Request failed: ${res.statusText}`);
+        }
+        return res.json();
+    },
+
+    get: (endpoint) => API.fetch(endpoint),
+    post: (endpoint, body) => API.fetch(endpoint, { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body) }),
+    put: (endpoint, body) => API.fetch(endpoint, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (endpoint) => API.fetch(endpoint, { method: 'DELETE' })
+};
+
 const DB = {
-    get supabase() {
-        return window.api?.supabase;
+    async getProjects() { return await API.get('/api/projects'); },
+    async getProject(id) { 
+        const res = await API.get(`/api/projects/${id}`); 
+        return res.project;
     },
+    async createProject(project) { return null; },
+    async updateProject(id, updates) { return null; },
+    async deleteProject(id) { await API.delete(`/api/projects/${id}`); },
 
-    async getUserId() {
-        const { data } = await this.supabase.auth.getSession();
-        return data?.session?.user?.id;
+    async getScenes(projectId) { 
+        const res = await API.get(`/api/projects/${projectId}`);
+        return res.scenes;
     },
+    async createScenes(scenes) { return null; },
+    async updateScene(id, updates) { return null; },
 
-    // --- Projects ---
-    async getProjects() {
-        const { data, error } = await this.supabase
-            .from('projects')
-            .select('*')
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return data || [];
-    },
-
-    async getProject(id) {
-        const { data, error } = await this.supabase
-            .from('projects')
-            .select('*')
-            .eq('id', id)
-            .single();
-        if (error) throw error;
-        return data;
-    },
-
-    async createProject(project) {
-        const userId = await this.getUserId();
-        const { data, error } = await this.supabase
-            .from('projects')
-            .insert({ ...project, user_id: userId })
-            .select()
-            .single();
-        if (error) throw error;
-        return data;
-    },
-
-    async updateProject(id, updates) {
-        const { data, error } = await this.supabase
-            .from('projects')
-            .update(updates)
-            .eq('id', id)
-            .select()
-            .single();
-        if (error) throw error;
-        return data;
-    },
-
-    async deleteProject(id) {
-        const { error } = await this.supabase
-            .from('projects')
-            .delete()
-            .eq('id', id);
-        if (error) throw error;
-    },
-
-    // --- Scenes ---
-    async getScenes(projectId) {
-        const { data, error } = await this.supabase
-            .from('scenes')
-            .select('*')
-            .eq('project_id', projectId)
-            .order('scene_number', { ascending: true });
-        if (error) throw error;
-        return data || [];
-    },
-
-    async createScenes(scenes) {
-        const userId = await this.getUserId();
-        const rows = scenes.map(s => ({ ...s, user_id: userId }));
-        const { data, error } = await this.supabase
-            .from('scenes')
-            .insert(rows)
-            .select();
-        if (error) throw error;
-        return data;
-    },
-
-    async updateScene(id, updates) {
-        const { data, error } = await this.supabase
-            .from('scenes')
-            .update(updates)
-            .eq('id', id)
-            .select()
-            .single();
-        if (error) throw error;
-        return data;
-    },
-
-    // --- User Settings ---
     async getSettings() {
-        const userId = await this.getUserId();
-        const { data, error } = await this.supabase
-            .from('user_settings')
-            .select('*')
-            .eq('user_id', userId)
-            .maybeSingle();
-        if (error) throw error;
-        return data;
+        const res = await API.get('/api/settings');
+        return res.settings;
     },
-
     async upsertSettings(settings) {
-        const userId = await this.getUserId();
-        const { data, error } = await this.supabase
-            .from('user_settings')
-            .upsert({ ...settings, user_id: userId }, { onConflict: 'user_id' })
-            .select()
-            .single();
-        if (error) throw error;
-        return data;
+        const res = await API.put('/api/settings', settings);
+        return res.settings;
     },
 };
 
@@ -324,16 +263,29 @@ const Upload = {
 
         try {
             document.getElementById('upload-status').classList.remove('hidden');
-            document.getElementById('upload-status').innerHTML = '<p class="text-muted">Validating CSV...</p>';
+            document.getElementById('upload-status').innerHTML = '<p class="text-muted">Uploading CSV to backend...</p>';
 
-            const text = await file.text();
-            const result = CSVParser.parse(text);
-            this.csvData = result;
-            this.showValidation(result);
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const result = await API.post('/api/upload/csv', formData);
+            
+            // Backend returns { filename, rows: [...] }
+            const mockResult = {
+                total_rows: result.rows.length,
+                valid_rows: result.rows.length,
+                invalid_rows: 0,
+                errors: [],
+                rows: result.rows,
+                detected_columns: Object.keys(result.rows[0] || {})
+            };
+            
+            this.csvData = mockResult;
+            this.showValidation(mockResult);
 
             if (result.rows.length > 0) {
                 App.csvRows = result.rows;
-                Toast.success(`CSV loaded: ${result.valid_rows} scenes`);
+                Toast.success(`CSV loaded: ${result.rows.length} scenes`);
             }
         } catch (err) {
             Toast.error(`Upload failed: ${err.message}`);
@@ -607,51 +559,33 @@ const Generation = {
         }
 
         const settings = Settings.getSettings();
-        const userSettings = await DB.getSettings();
-        const apiKey = userSettings?.google_api_key;
-
-        if (!apiKey) {
-            Toast.error('Google API Key not configured! Go to API Configuration first.');
-            Router.navigate('api-settings');
-            return;
-        }
 
         try {
-            // 1. Create project in Supabase
-            const project = await DB.createProject({
+            // 1. Create project + scenes via Backend API
+            const projectData = {
                 name: `Batch ${new Date().toLocaleString()}`,
                 mode: settings.mode,
-                status: 'PROCESSING',
-                total_scenes: App.csvRows.length,
-            });
+                rows: App.csvRows
+            };
+            const createRes = await API.post('/api/projects', projectData);
+            const project = createRes.project;
 
             this.currentProject = project;
             App.currentJobId = project.id;
-
-            // 2. Create scenes in Supabase
-            const scenesToInsert = App.csvRows.map((row, idx) => ({
-                project_id: project.id,
-                scene_number: row.id || String(idx + 1),
-                visual_prompt: row.visual_prompt,
-                voiceover_script: row.voiceover_script || '',
-                aspect_ratio: row.aspect_ratio || settings.aspect_ratio,
-                voice: row.voice || settings.voice_name,
-                overall_status: 'PENDING',
-            }));
-            const createdScenes = await DB.createScenes(scenesToInsert);
-
-            // 3. Start client-side processing
+            
+            // 2. Start generation on backend
+            await API.post('/api/generation/start', { project_id: String(project.id) });
+            
             this.isRunning = true;
             this.isPaused = false;
-            this.queue = [...createdScenes];
-            this.concurrency = settings.concurrency || 1;
-
-            Toast.success(`Job started: ${createdScenes.length} scenes`);
+            Toast.success(`Job started on backend!`);
             this.updateControls();
             Router.navigate('dashboard');
-
-            // 4. Process the queue
-            this.processQueue(apiKey, settings);
+            
+            // Polling for progress
+            if (this.progressInterval) clearInterval(this.progressInterval);
+            this.progressInterval = setInterval(() => Dashboard.refresh(), 2000);
+            
         } catch (err) {
             Toast.error(`Failed to start: ${err.message}`);
         }

@@ -3,3 +3,4 @@
 
 window.SUPABASE_URL = "https://fszerqcjcubmazbyliae.supabase.co";
 window.SUPABASE_KEY = "sb_publishable_gyZKNzUp53HJRbnsGEd62w_lwATr4Ml";
+window.API_BASE_URL = "http://localhost:8000";
