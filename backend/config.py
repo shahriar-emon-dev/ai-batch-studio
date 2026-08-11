@@ -4,14 +4,14 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     # Supabase config
-    supabase_url: str = Field(default="", env="SUPABASE_URL")
-    supabase_anon_key: str = Field(default="", env="SUPABASE_KEY")
-    supabase_service_role_key: str = Field(default="", env="SUPABASE_SERVICE_ROLE_KEY")
-    supabase_jwt_secret: str = Field(default="", env="SUPABASE_JWT_SECRET")
+    supabase_url: str = Field(default="", validation_alias="SUPABASE_URL")
+    supabase_anon_key: str = Field(default="", validation_alias="SUPABASE_KEY")
+    supabase_service_role_key: str = Field(default="", validation_alias="SUPABASE_SERVICE_ROLE_KEY")
+    supabase_jwt_secret: str = Field(default="", validation_alias="SUPABASE_JWT_SECRET")
 
     # Security
-    encryption_key: str = Field(default="", env="ENCRYPTION_KEY")
-    allowed_origins: str = Field(default="http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000", env="ALLOWED_ORIGINS")
+    encryption_key: str = Field(default="", validation_alias="ENCRYPTION_KEY")
+    allowed_origins: str = Field(default="http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000", validation_alias="ALLOWED_ORIGINS")
 
     # Paths
     base_dir: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     uploads_dir: str = os.path.join(base_dir, "uploads")
 
     # API Defaults
-    default_concurrency: int = Field(default=3, env="MAX_CONCURRENT_JOBS")
+    default_concurrency: int = Field(default=3, validation_alias="MAX_CONCURRENT_JOBS")
     
     # FFmpeg
-    ffmpeg_path: str = Field(default="ffmpeg", env="FFMPEG_PATH")
+    ffmpeg_path: str = Field(default="ffmpeg", validation_alias="FFMPEG_PATH")
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(base_dir, ".env"),

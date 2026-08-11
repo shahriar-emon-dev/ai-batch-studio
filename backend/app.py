@@ -39,6 +39,7 @@ app.include_router(project_router.router, prefix="/api/projects", tags=["Project
 app.include_router(generation_router.router, prefix="/api/generation", tags=["Generation"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(files_router.router, prefix="/api/files", tags=["Files"])
+app.include_router(files_router.router, prefix="/api/export", tags=["Export"])
 
 @app.get("/api/health")
 async def health_check():

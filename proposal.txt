@@ -1,0 +1,959 @@
+Automated AI Image, Video & Voiceover Generation Platform
+Document Type: Project Proposal & Software Requirements Specification
+Version: 1.0
+Date: August 11, 2026
+Status: Final
+
+TABLE OF CONTENTS
+Executive Summary
+
+Project Overview
+
+Problem Statement
+
+Proposed Solution
+
+Project Objectives
+
+Project Scope
+
+Out of Scope
+
+Target Users
+
+Core Use Case
+
+Complete System Workflow
+
+Functional Requirements
+
+Non‑Functional Requirements
+
+System Architecture
+
+Technology Stack
+
+Authentication & User Management
+
+API Key Management
+
+CSV Processing System
+
+AI Generation Engine
+
+Voiceover Generation
+
+Batch Processing & Job Queue
+
+Progress Tracking
+
+Retry & Recovery
+
+File Management
+
+Export System
+
+Project Management
+
+Database Design
+
+API Specification
+
+Frontend Requirements
+
+Backend Requirements
+
+Security Requirements
+
+Multi‑User Architecture
+
+Error Handling
+
+Logging & Monitoring
+
+Local Development
+
+Production Deployment
+
+Environment Configuration
+
+Testing Requirements
+
+Acceptance Criteria
+
+Future Expansion
+
+Development Phases
+
+Definition of Done
+
+Master Instructions for Implementation
+
+1. EXECUTIVE SUMMARY
+AI Content Studio is a web‑based platform that automates the generation of large‑scale AI‑created visual and audio content. The primary workflow is:
+
+text
+CSV File
+   ↓
+CSV Validation
+   ↓
+Scene/Prompt Import
+   ↓
+Project Creation
+   ↓
+Batch Generation
+   ↓
+AI Image / Video Generation
+   ↓
+AI Voiceover Generation
+   ↓
+File Storage
+   ↓
+Progress Tracking
+   ↓
+Retry / Resume
+   ↓
+File Selection
+   ↓
+Export
+The system targets users who need to produce hundreds or thousands of AI‑generated assets without manually entering prompts one by one. The user prepares a structured CSV file containing scene information such as Scene ID, visual prompt, voiceover script, filename, aspect ratio, and optional generation settings. Each row becomes an individual generation task.
+
+The application supports user registration and login (via Supabase), multiple projects, CSV upload and validation, bulk generation of images and videos (where supported by Google AI APIs), voiceover generation, secure API‑key management, background jobs, retry and resume logic, progress tracking, file management, selective export (ZIP), and full multi‑user isolation with persistent job state.
+
+2. PROJECT OVERVIEW
+2.1 Project Name
+AI Content Studio
+(Alternative internal name: AI Bulk Content Generator)
+
+2.2 Project Type
+A cloud‑ready, Software‑as‑a‑Service (SaaS)‑style web application.
+
+2.3 Primary Purpose
+To convert structured content instructions (CSV rows) into actual AI‑generated media at scale:
+
+text
+500 CSV rows
+      ↓
+500 visual generation tasks
+      +
+500 voiceover tasks
+      ↓
+1 000+ AI operations
+      ↓
+Organized content library
+3. PROBLEM STATEMENT
+Manual AI content generation is time‑consuming and impractical for large projects. A typical manual workflow requires the user to:
+
+Read a script.
+
+Create a prompt.
+
+Open an AI generation tool.
+
+Enter the prompt.
+
+Wait for generation.
+
+Download the result.
+
+Rename the file.
+
+Generate voiceover separately.
+
+Download the audio.
+
+Organize files.
+
+Repeat hundreds of times.
+
+This becomes impractical for large‑scale content production. The proposed system solves this problem by providing a centralised, automated pipeline.
+
+4. PROPOSED SOLUTION
+The application allows the user to upload a structured CSV. For example:
+
+csv
+id,visual_prompt,voiceover_script,filename,aspect_ratio
+001,"Ancient Roman marketplace at sunset","Imagine walking through ancient Rome.","scene_001","16:9"
+002,"Roman soldiers marching through a city","Thousands of soldiers once marched here.","scene_002","16:9"
+003,"Ancient Roman emperor in a palace","At the center of the empire stood the emperor.","scene_003","16:9"
+Each row becomes a Scene. Every scene can independently track:
+
+text
+Visual Status
+Voice Status
+Video Status
+Overall Status
+The generation engine processes all scenes automatically, independently of the browser, with full error recovery and persistent state.
+
+5. PROJECT OBJECTIVES
+Primary Objectives
+ID	Objective
+O1	Automate bulk content generation from CSV data.
+O2	Eliminate repetitive manual prompt entry and downloading.
+O3	Centralise AI image, video, and voice generation.
+O4	Provide reliable batch processing with background jobs.
+O5	Maintain persistent state across browser closures, page refreshes, and backend restarts.
+O6	Securely store and manage authorised API profiles.
+O7	Support multiple users with complete data isolation.
+O8	Automatically organise generated assets and simplify export.
+6. PROJECT SCOPE
+6.1 Included
+User authentication (registration, login, logout, password reset, session management)
+
+Dashboard
+
+Project management (CRUD)
+
+CSV upload, validation, and scene import
+
+API profile management
+
+Google AI integration
+
+Image generation
+
+Video generation (where supported by configured APIs)
+
+Voiceover generation (Google‑supported TTS)
+
+Background job queue with workers
+
+Configurable retry, pause, resume, and recovery
+
+Real‑time progress tracking
+
+File storage and organisation
+
+Selective asset selection and ZIP export
+
+Database persistence
+
+Multi‑user isolation (Row‑Level Security)
+
+Security best practices (no exposure of secrets)
+
+Production deployment support
+
+7. OUT OF SCOPE
+The initial version does not include:
+
+Direct social media publishing (YouTube, TikTok, Facebook)
+
+Advanced video editing timeline
+
+Non‑linear video editor
+
+Team collaboration / shared projects
+
+Payment gateway or subscription billing
+
+Marketplace or third‑party integrations
+
+AI model training or custom foundation model training
+
+These features may be added in future versions.
+
+8. TARGET USERS
+YouTube creators
+
+Documentary creators
+
+Short‑form content creators
+
+AI content creators
+
+Social media creators
+
+Digital marketers
+
+Video production teams
+
+Researchers
+
+Content agencies
+
+9. CORE USE CASE
+A user uploads a CSV containing hundreds of visual prompts and voiceover scripts and automatically generates the corresponding media.
+
+text
+CSV (500 scenes)
+      ↓
+Import
+      ↓
+Validate
+      ↓
+Start Job
+      ↓
+Queue
+      ↓
+Worker
+      ↓
+Google AI
+      ↓
+Images/Videos + Voiceovers
+      ↓
+Storage
+      ↓
+Export
+This workflow is the central product feature. Authentication, settings, and other features exist to support it.
+
+10. COMPLETE SYSTEM WORKFLOW
+Registration – User creates an account with email, password, and confirm password. Supabase Auth creates the user.
+
+Login – User logs into the application.
+
+Dashboard – Displays projects, recent jobs, generation statistics, API status, and storage usage.
+
+API Configuration – User adds an authorised Google API profile (e.g., “Production” with a masked key).
+
+Test API – System performs a real connectivity test against the configured API.
+
+Create Project – User creates a project (e.g., “Ancient Rome Documentary”).
+
+Upload CSV – User uploads a CSV file (e.g., ancient_rome.csv).
+
+CSV Validation – System checks file type, required columns, empty rows, duplicate IDs, invalid values, unsupported settings, and missing prompts.
+
+Preview – Displays total scenes, valid count, invalid count, and allows inspection of invalid rows.
+
+Start Generation – User triggers batch generation.
+
+Background Job Creation – A job is created and enqueued.
+
+Worker Processing – Worker processes each scene independently, calling Google APIs.
+
+Progress Tracking – UI updates with real‑time progress (completed/pending/failed).
+
+Retry/Resume – Failed or paused jobs can be retried/resumed without re‑generating completed scenes.
+
+File Management – Generated assets are organised in project folders.
+
+Asset Selection & Export – User selects files and exports them as a ZIP archive.
+
+Persistent State – All data survives logouts, browser closures, and backend restarts.
+
+11. FUNCTIONAL REQUIREMENTS
+This section summarises the detailed requirements spread across the document. Key functional areas include:
+
+Authentication (register, login, logout, password reset, session persistence)
+
+Project Management (CRUD, user‑ownership, archive)
+
+CSV Handling (upload, parse, validate, preview, scene creation)
+
+API Key Management (secure storage, multiple profiles, test connectivity)
+
+AI Generation (image, video where supported, voiceover via Google‑supported TTS)
+
+Job & Queue (background worker, concurrency control, pause, resume, cancel, retry)
+
+Progress Dashboard (aggregate and per‑scene status)
+
+File Storage (organised by project and type, retrieval)
+
+Export (selective file selection, ZIP download)
+
+Multi‑user Isolation (RLS, full separation of all user‑owned data)
+
+12. NON‑FUNCTIONAL REQUIREMENTS
+Performance – UI remains responsive while large jobs run.
+
+Reliability – Jobs survive temporary failures, browser closure, and backend restarts.
+
+Scalability – Architecture supports multiple concurrent users.
+
+Security – Credentials and user data must be completely isolated; no secrets exposed.
+
+Maintainability – Clean separation of frontend, API, services, workers, database, AI providers, and storage.
+
+Extensibility – Architecture abstracts providers, allowing future addition of new AI services without rewrites.
+
+13. SYSTEM ARCHITECTURE
+text
+                         USER
+                           │
+                           ▼
+                    WEB APPLICATION
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+             ▼                           ▼
+        SUPABASE                      FASTAPI
+             │                           │
+       ┌─────┼─────┐               ┌────┴─────┐
+       │     │     │               │          │
+      Auth   DB  Storage          API       Services
+                                       │
+                                       ▼
+                                     QUEUE
+                                       │
+                                       ▼
+                                     WORKER
+                                       │
+                         ┌─────────────┼─────────────┐
+                         ▼             ▼             ▼
+                       IMAGE         VIDEO          TTS
+                         │             │             │
+                         └─────────────┼─────────────┘
+                                       ▼
+                                    STORAGE
+                                       │
+                                       ▼
+                                     EXPORT
+Key principle: The entire application must operate as one connected system. Saving an API key must flow through to actual API calls. CSV upload must lead to scene creation, job queuing, generation, storage, and export.
+
+14. TECHNOLOGY STACK
+Component	Technology
+Backend Framework	FastAPI (Python)
+Database & Auth	Supabase (PostgreSQL, Auth, Storage, RLS)
+AI Services	Google AI APIs / Google‑supported generation services
+Job Queue	Redis + Celery / RQ / Arq (or equivalent background worker)
+Frontend	Web application (React, Vue, Svelte, etc. – framework‑agnostic in this spec, but must communicate via environment‑based configuration)
+Storage	Supabase Storage (or compatible object store)
+Deployment	Cloud‑ready, production ASGI server (e.g., Uvicorn, Gunicorn with Uvicorn workers)
+15. AUTHENTICATION & USER MANAGEMENT
+Managed entirely through Supabase Auth.
+
+Registration, login, logout, password reset.
+
+Session tokens verified by FastAPI on every protected request.
+
+No sensitive data stored in localStorage.
+
+16. API KEY MANAGEMENT
+Users create named API profiles (e.g., “Production”, “Secondary”).
+
+Credentials stored securely on the server (encrypted at rest, never exposed to frontend).
+
+System provides a Test endpoint that performs a real, minimal API call.
+
+Profiles have connection status (active/inactive) and last‑tested timestamp.
+
+Multiple authorised profiles may be used, but the system must not circumvent provider usage limits or terms.
+
+On quota/rate‑limit failures, the system may fall back to another authorised profile only when consistent with the provider’s terms.
+
+17. CSV PROCESSING SYSTEM
+17.1 Minimum CSV Format
+csv
+id,visual_prompt,voiceover_script,filename
+17.2 Recommended Format
+csv
+id,visual_prompt,voiceover_script,filename,aspect_ratio,media_type,voice_name
+17.3 Validation Rules
+File type must be CSV
+
+Required columns must be present
+
+visual_prompt must not be empty
+
+id must be unique within the project
+
+media_type must be a supported type (image, video)
+
+aspect_ratio must be valid (e.g., “16:9”, “9:16”, “1:1”)
+
+No unsupported encoding; corrupted files rejected
+
+Invalid rows are reported, not silently discarded
+
+17.4 Workflow
+Upload CSV
+
+Parse and validate
+
+Show preview (valid/invalid counts)
+
+On acceptance, create scene records in the database
+
+18. AI GENERATION ENGINE
+The generation engine uses a provider abstraction to avoid tight coupling:
+
+text
+Generation Provider
+        │
+        ├── Image Provider
+        ├── Video Provider
+        └── Voice Provider
+Each provider is implemented for Google‑supported APIs. If a provider cannot perform a requested operation (e.g., video generation), it returns an explicit “UNAVAILABLE” state rather than a fake success.
+
+18.1 Image Generation
+For each scene with a visual prompt, the worker calls the image generation API, stores the result, and records the asset in the database.
+
+18.2 Video Generation
+If the configured Google service/API supports video generation, the worker follows a similar flow. Otherwise, the system displays “VIDEO GENERATION UNAVAILABLE” and does not create fake assets.
+
+19. VOICEOVER GENERATION
+For every scene with a voiceover_script, the worker calls a Google‑supported Text‑to‑Speech (TTS) service. The resulting audio file is stored and associated with the scene. Voiceover generation status is tracked independently from visual generation.
+
+20. BATCH PROCESSING & JOB QUEUE
+20.1 Generation Job
+A generation job aggregates all scenes of a project. It tracks:
+
+text
+Total tasks
+Completed tasks
+Processing tasks
+Failed tasks
+Pending tasks
+20.2 Queue Architecture
+Long‑running generation must not depend on an open browser request:
+
+text
+Frontend → FastAPI → Job Database → Queue → Worker → Google API
+Recommended implementation: Redis + a background task library (Celery, RQ, Arq, or similar) that persists job state.
+
+20.3 Worker Behaviour
+Processes one scene at a time (or configurable concurrency).
+
+Generates visual, then voice (order may be configurable).
+
+Updates database status after each step.
+
+Respects configurable concurrency and provider rate limits.
+
+20.4 Concurrency
+Configurable (default conservative, e.g., 1‑2 concurrent operations). Should never flood the provider with hundreds of simultaneous requests.
+
+20.5 Quota & Rate Limit Handling
+When Google returns 429 (quota/rate limit), the worker pauses the job, sets an appropriate status, and allows the user to resume later. Completed items are preserved.
+
+21. PROGRESS TRACKING
+A dashboard displays:
+
+Overall project progress (percentage)
+
+Breakdown by status: completed, processing, failed, pending
+
+Current scene and current operation (e.g., “Generating Voiceover”)
+
+Progress updates happen in near real‑time via database queries (polling or WebSocket, depending on implementation).
+
+22. RETRY & RECOVERY
+Retry – Failed tasks are automatically retried up to a configurable maximum attempt count.
+
+Resume – If a job is paused or interrupted (e.g., backend restart), it can be resumed. Already completed scenes must not be re‑generated.
+
+Recovery – Job state is persisted in the database; upon worker startup, pending/in‑progress jobs are reloaded and execution continues from the last successful scene.
+
+23. FILE MANAGEMENT
+Generated files are organised automatically in a logical structure:
+
+text
+Project/
+├── images/
+│   ├── scene_001.png
+│   ├── scene_002.png
+├── videos/
+│   ├── scene_001.mp4
+├── voiceovers/
+│   ├── scene_001.wav
+│   ├── scene_002.wav
+└── final/
+    └── (combined outputs, if applicable)
+Each asset is tracked in the database with its storage path, size, type, provider, and model.
+
+24. EXPORT SYSTEM
+Users can select files individually, by status (Completed, Failed), or all.
+
+Selected files are packed into a ZIP archive that preserves the project folder structure.
+
+Export metadata (e.g., job ID, timestamp) is recorded for traceability.
+
+25. PROJECT MANAGEMENT
+Users can:
+
+Create, rename, open, delete, and archive projects.
+
+Each project belongs to exactly one user (multi‑user isolation enforced via RLS).
+
+Projects maintain a status (e.g., draft, active, completed, archived).
+
+26. DATABASE DESIGN
+The Supabase PostgreSQL database includes the following core tables (all subject to Row‑Level Security with auth.uid() = user_id):
+
+26.1 projects
+id, user_id, name, description, status, created_at, updated_at
+
+26.2 scenes
+id, project_id, user_id, external_id, visual_prompt, voiceover_script, filename, aspect_ratio, media_type, voice_name, visual_status, voice_status, video_status, overall_status, created_at, updated_at
+
+26.3 generation_jobs
+id, project_id, user_id, status, total_tasks, completed_tasks, processing_tasks, failed_tasks, pending_tasks, started_at, completed_at, created_at, updated_at
+
+26.4 generation_tasks
+id, job_id, scene_id, user_id, task_type (visual/voice/video), status, attempt_count, error_message, started_at, completed_at, created_at, updated_at
+
+26.5 api_profiles
+id, user_id, profile_name, provider, credential_reference (encrypted), is_active, connection_status, last_tested_at, created_at, updated_at
+
+26.6 assets
+id, user_id, project_id, scene_id, asset_type, storage_path, filename, mime_type, size, provider, model, created_at
+
+All tables are protected by Supabase Row‑Level Security policies to ensure a user can only access their own records.
+
+27. API SPECIFICATION
+All API routes are prefixed with /api and require authentication (unless public like /health). Suggested endpoints:
+
+Health
+http
+GET /health
+Projects
+http
+GET    /api/projects
+POST   /api/projects
+GET    /api/projects/{id}
+PATCH  /api/projects/{id}
+DELETE /api/projects/{id}
+CSV & Scenes
+http
+POST /api/projects/{id}/csv/upload
+GET  /api/projects/{id}/scenes
+Generation
+http
+POST /api/projects/{id}/generation/start
+GET  /api/generation/{job_id}
+POST /api/generation/{job_id}/pause
+POST /api/generation/{job_id}/resume
+POST /api/generation/{job_id}/cancel
+POST /api/generation/{job_id}/retry
+API Profiles
+http
+GET    /api/settings/api-profiles
+POST   /api/settings/api-profiles
+PATCH  /api/settings/api-profiles/{id}
+DELETE /api/settings/api-profiles/{id}
+POST   /api/settings/api-profiles/{id}/test
+Assets
+http
+GET    /api/projects/{id}/assets
+DELETE /api/assets/{id}
+Export
+http
+POST /api/export
+GET  /api/export/{id}
+28. FRONTEND REQUIREMENTS
+Main Pages
+/login
+
+/register
+
+/forgot-password
+
+/dashboard
+
+/projects
+
+/projects/:id (project detail, CSV upload, scene list, generation controls)
+
+/projects/:id/generation (progress view)
+
+/projects/:id/assets (file browser)
+
+/projects/:id/export
+
+/settings
+
+/settings/api (API profile management)
+
+UI Behaviour
+Modern, responsive design.
+
+All forms display loading, success, and error states.
+
+Generation progress updates dynamically.
+
+No hard‑coded localhost URLs; all API calls use environment‑based configuration.
+
+Browser‑accessible URLs are http://localhost:<port> or http://127.0.0.1:<port>, never 0.0.0.0.
+
+29. BACKEND REQUIREMENTS
+FastAPI application structured with clear separation:
+
+main.py
+
+api/ – route handlers
+
+services/ – business logic (Supabase, Google, image, video, voice, storage, export)
+
+workers/ – background worker and task definitions
+
+models/, schemas/, middleware/, utils/, config.py
+
+Authentication middleware verifies Supabase access tokens.
+
+All user‑owned resource accesses are scoped to the authenticated user.
+
+API keys are never returned in plain text to the frontend.
+
+Background workers process jobs using a persistent queue (Redis + task library).
+
+30. SECURITY REQUIREMENTS
+Never expose: passwords, raw API keys, service‑role keys, database passwords, access tokens, or encryption keys.
+
+Never store sensitive keys in localStorage, CSV files, source code, Git, public files, or logs.
+
+All API‑key storage uses server‑side encryption (e.g., Supabase Vault or equivalent).
+
+Row‑Level Security (RLS) enforces strict user‑ownership isolation.
+
+CORS configured to allow only the intended frontend origin.
+
+Production deployment uses HTTPS and secure headers.
+
+31. MULTI‑USER ARCHITECTURE
+Every user exists within their own isolated context:
+
+Supabase Auth provides unique user IDs.
+
+All database tables include user_id and RLS policies.
+
+API routes derive the user identity from the token and scope all queries.
+
+File storage paths are prefixed by user ID or project ID to prevent cross‑access.
+
+32. ERROR HANDLING
+Errors are categorised and handled gracefully:
+
+User errors – invalid CSV, missing prompts → clear feedback in UI.
+
+Authentication errors – 401/403 → redirect to login or show permission denied.
+
+Provider errors – quota, rate‑limit, unavailable service → job paused, informative message, not treated as fatal.
+
+Internal errors – 500 → logged with trace ID, generic error shown to user.
+
+33. LOGGING & MONITORING
+At minimum, a /health endpoint that reports the status of FastAPI, database, storage, and queue connectivity.
+
+Application logs structured (JSON) and include correlation IDs for request tracing.
+
+Worker logs capture task attempts, failures, and retries.
+
+Production monitoring should alert on critical failures (queue lag, database down, etc.).
+
+34. LOCAL DEVELOPMENT
+Recommended local setup:
+
+text
+Browser → Frontend (localhost:port) → FastAPI (localhost:8000) → Supabase Cloud → Google API
+FastAPI binds to 0.0.0.0:8000 (for Docker compatibility), but developers access it via http://localhost:8000 or http://127.0.0.1:8000.
+
+Frontend .env points to the FastAPI URL (configurable).
+
+Supabase credentials are stored in .env (never committed).
+
+Redis and worker can run locally or via Docker.
+
+35. PRODUCTION DEPLOYMENT
+Production architecture:
+
+text
+                     INTERNET
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │   FRONTEND   │ (static hosting / CDN)
+                 └──────┬───────┘
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │   FASTAPI    │ (ASGI server, e.g., Uvicorn)
+                 └──────┬───────┘
+                        │
+                 ┌──────┴───────┐
+                 ▼              ▼
+              SUPABASE        QUEUE (Redis)
+                                │
+                                ▼
+                              WORKER
+                                │
+                                ▼
+                           GOOGLE AI
+                                │
+                                ▼
+                            STORAGE
+FastAPI runs via a production ASGI server (Uvicorn, Gunicorn + Uvicorn workers).
+
+Workers run as separate processes or containers.
+
+All secrets configured via environment variables/secrets manager.
+
+CORS allows only the production frontend domain.
+
+36. ENVIRONMENT CONFIGURATION
+A .env.example file must be provided:
+
+env
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+FRONTEND_URL=
+BACKEND_URL=
+
+DATABASE_URL=
+
+REDIS_URL=
+
+GOOGLE_API_KEY=
+# Additional provider keys as needed
+Only include variables actually required. Secrets must be managed through the deployment environment’s secrets mechanism.
+
+37. TESTING REQUIREMENTS
+Unit Tests
+CSV parser, validation logic, status transitions, prompt processing, file naming, export logic.
+
+Integration Tests
+Supabase connection, authentication flow, API profile CRUD, generation job creation, storage operations.
+
+End‑to‑End Tests
+Full user journey using a small test CSV (2 scenes).
+
+Verify: register → login → add API profile → test API → create project → upload CSV → validate → start generation → real media generation → voiceover generation → file storage → progress display → job completion → asset selection → ZIP export → logout → re‑login → confirm all data persists.
+
+Failure Tests
+Simulate API failures (429, 500), worker crashes, backend restarts; ensure job resilience and correct recovery.
+
+38. ACCEPTANCE CRITERIA
+The project passes acceptance only when every checkbox is satisfied.
+
+Authentication
+□ Registration, login, logout, password reset work.
+□ Sessions persist correctly.
+□ Protected routes return 401 for unauthenticated requests.
+Supabase
+□ Database operational; RLS policies enforce user isolation.
+□ Storage correctly scoped per user/project.
+API Management
+□ API profiles can be created, edited, deleted.
+□ Credentials stored securely; API test performs a real call.
+□ Profiles persist across sessions.
+CSV Processing
+□ Upload, validation, preview, and scene creation work.
+□ Invalid rows are accurately reported.
+Generation
+□ Jobs are created and enqueued.
+□ Worker processes scenes, generates real media (images, voiceovers, and videos where supported).
+□ Files are saved to storage and database status updated.
+□ Progress updates in real‑time.
+□ Pause, resume, cancel, retry work without re‑generating completed scenes.
+Reliability
+□ Browser closure does not stop the job.
+□ Backend restart does not lose completed work.
+□ Duplicate generation is prevented.
+Export
+□ File selection (individual, select all, by status) works.
+□ ZIP export contains correct folder structure and actual files.
+Deployment
+□ Local development setup works.
+□ Production build and deployment succeed.
+□ CORS, health endpoint, and /docs operational.
+39. FUTURE EXPANSION
+Future versions may include:
+
+V2 – Video assembly, subtitle generation, background music, scene transitions.
+
+V3 – Direct publishing to YouTube, TikTok, Facebook.
+
+V4 – Team collaboration, shared projects, roles, admin dashboard.
+
+V5 – Billing, subscription plans, usage‑based pricing.
+
+40. DEVELOPMENT PHASES
+Phase	Focus
+1	Foundation (project structure, FastAPI, Supabase, environment, health endpoint)
+2	Authentication (registration, login, logout, sessions, password reset)
+3	Project Management (CRUD, RLS, dashboard)
+4	API Management (profiles, secure storage, testing)
+5	CSV System (upload, validation, preview, scene creation)
+6	AI Generation (provider abstraction, Google integration, image, video, voice)
+7	Job System (queue, worker, progress, retry, pause, resume, recovery)
+8	File Management (storage, asset library, selection, export, ZIP)
+9	Testing (unit, integration, E2E, failure, security)
+10	Deployment (production frontend, FastAPI, worker, monitoring)
+41. DEFINITION OF DONE
+The project is complete when the full pipeline is functional, persistent, and tested:
+
+text
+USER
+ │
+ ▼
+REGISTER → LOGIN → DASHBOARD
+ │
+ ▼
+ADD GOOGLE API → TEST API
+ │
+ ▼
+CREATE PROJECT → UPLOAD CSV → VALIDATE CSV
+ │
+ ▼
+START GENERATION → CREATE JOB → QUEUE → WORKER
+ │      │
+ │      ├─── VISUAL GENERATION
+ │      └─── VOICE GENERATION
+ │               │
+ │               ▼
+ │           STORAGE
+ │               │
+ │               ▼
+ │           DATABASE → PROGRESS
+ │               │
+ │               ▼
+ └───────────── EXPORT
+Every arrow represents a real, working integration, not simulated or hard‑coded behaviour.
+
+42. MASTER INSTRUCTIONS FOR IMPLEMENTATION
+The following instructions serve as the definitive implementation guide for AI coding agents (e.g., Gemini, Antigravity). They must be followed precisely.
+
+You are responsible for completing the AI Content Studio application according to this specification.
+
+Inspect the existing repository – understand the current codebase. Do not unnecessarily rewrite working components.
+
+Identify gaps – locate incomplete, mocked, disconnected, broken, or placeholder functionality.
+
+Primary objective – make the end‑to‑end pipeline functional: CSV → AI generation (visual & voice) → storage → progress → export.
+
+Technologies – Supabase (auth, DB, RLS, storage), FastAPI (backend), persistent background queue/worker (Redis + Celery/RQ/Arq), Google‑supported AI APIs.
+
+No simulation – implement real functionality. Never create fake generation responses, fake progress, fake API connections, or placeholder completion states. If a capability is genuinely unavailable, the system must clearly indicate that rather than pretend success.
+
+API keys – handle securely. Never expose raw credentials to frontend. Never store secrets in source code, Git, CSV, localStorage, or logs.
+
+Multi‑user isolation – every user‑owned record must be protected by RLS and server‑side authorization. Users must never access another user’s data.
+
+Background jobs – long‑running generation must run through a persistent worker, not an HTTP request. Browser closure must not destroy a job; backend restart must not lose completed work.
+
+Job states – support pending, processing, completed, failed, paused, retry, resume. Completed scenes must not be re‑generated.
+
+Error handling – handle rate limits (429), quota errors, network failures gracefully.
+
+Environment configuration – frontend uses configurable API URL (no hard‑coded localhost). Server may bind to 0.0.0.0 but browser URLs must use localhost or 127.0.0.1.
+
+Verification checklist:
+
+/health endpoint returns 200
+
+FastAPI /docs accessible
+
+Frontend ↔ FastAPI communication functional
+
+FastAPI ↔ Supabase functional
+
+FastAPI ↔ Google API functional
+
+Worker ↔ Google API functional
+
+Generated assets stored and retrievable
+
+Database reflects accurate generation status
+
+Asset selection → export works
+
+End‑to‑end test – using a small CSV, perform the full flow: register → login → save API profile → test API → create project → upload CSV → validate → start generation → background job processes scenes → real media created → voiceover created → files saved → progress displayed → job completes → select files → export ZIP → logout → login again → verify all state persists.
+
+Final product – maintainable, secure, modular, testable, and deployable. Do not declare completion merely because pages load; verify the pipeline works from start to finish.
+
+Document prepared by AI Content Studio Project Team. This specification is the single source of truth for all development activities.
+
+

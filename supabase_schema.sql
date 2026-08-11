@@ -107,6 +107,22 @@ CREATE TABLE activity_logs (
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE generation_jobs (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    total_tasks INTEGER NOT NULL DEFAULT 0,
+    completed_tasks INTEGER NOT NULL DEFAULT 0,
+    processing_tasks INTEGER NOT NULL DEFAULT 0,
+    failed_tasks INTEGER NOT NULL DEFAULT 0,
+    pending_tasks INTEGER NOT NULL DEFAULT 0,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- 3. Enable Row Level Security (RLS)
 ALTER TABLE api_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
@@ -114,6 +130,7 @@ ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scenes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE generation_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE generation_jobs ENABLE ROW LEVEL SECURITY;
 
 -- 4. Create RLS Policies
 -- Users can only read and write their own data.
@@ -140,4 +157,8 @@ CREATE POLICY "Users can manage generation attempts for their scenes" ON generat
 
 -- activity_logs
 CREATE POLICY "Users can view and manage their activity logs" ON activity_logs
+    FOR ALL USING (auth.uid() = user_id);
+
+-- generation_jobs
+CREATE POLICY "Users can manage their generation jobs" ON generation_jobs
     FOR ALL USING (auth.uid() = user_id);

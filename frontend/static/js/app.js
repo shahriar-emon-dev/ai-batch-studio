@@ -276,22 +276,14 @@ const Upload = {
             
             const result = await API.post('/api/upload/csv', formData);
             
-            // Backend returns { filename, rows: [...] }
-            const mockResult = {
-                total_rows: result.rows.length,
-                valid_rows: result.rows.length,
-                invalid_rows: 0,
-                errors: [],
-                rows: result.rows,
-                detected_columns: Object.keys(result.rows[0] || {})
-            };
-            
-            this.csvData = mockResult;
-            this.showValidation(mockResult);
+            this.csvData = result;
+            this.showValidation(result);
 
-            if (result.rows.length > 0) {
-                App.csvRows = result.rows;
-                Toast.success(`CSV loaded: ${result.rows.length} scenes`);
+            if (result.valid_rows && result.valid_rows.length > 0) {
+                App.csvRows = result.valid_rows;
+                Toast.success(`CSV loaded: ${result.valid_count} valid scenes`);
+            } else {
+                Toast.error('No valid scenes found in CSV');
             }
         } catch (err) {
             Toast.error(`Upload failed: ${err.message}`);
@@ -314,11 +306,12 @@ const Upload = {
 
     showValidation(result) {
         const statusEl = document.getElementById('upload-status');
+        if (!statusEl) return;
         statusEl.classList.remove('hidden');
 
-        const errorsHtml = result.errors.length > 0
-            ? `<div class="mt-md">${result.errors.slice(0, 20).map(e =>
-                `<div class="log-entry error"><span class="log-message">Row ${e.row}: [${e.column}] ${e.message}</span></div>`
+        const errorsHtml = (result.invalid_rows && result.invalid_rows.length > 0)
+            ? `<div class="mt-md">${result.invalid_rows.map(inv =>
+                `<div class="log-entry error"><span class="log-message">Row ${inv.row_number}: ${inv.errors.join(', ')}</span></div>`
               ).join('')}</div>`
             : '';
 
@@ -326,26 +319,19 @@ const Upload = {
             <div class="stats-grid mb-lg">
                 <div class="stat-card blue">
                     <div class="stat-label">Total Scenes</div>
-                    <div class="stat-value blue">${result.total_rows}</div>
+                    <div class="stat-value blue">${result.total_rows || 0}</div>
                 </div>
                 <div class="stat-card green">
                     <div class="stat-label">Valid Scenes</div>
-                    <div class="stat-value green">${result.valid_rows}</div>
+                    <div class="stat-value green">${result.valid_count || 0}</div>
                 </div>
                 <div class="stat-card red">
                     <div class="stat-label">Invalid Scenes</div>
-                    <div class="stat-value red">${result.invalid_rows}</div>
+                    <div class="stat-value red">${result.invalid_count || 0}</div>
                 </div>
-                <div class="stat-card purple">
-                    <div class="stat-label">Columns Found</div>
-                    <div class="stat-value purple">${result.detected_columns.length}</div>
-                </div>
-            </div>
-            <div class="flex gap-sm">
-                <span class="text-xs text-muted">Columns: ${result.detected_columns.join(', ')}</span>
             </div>
             ${errorsHtml}
-            ${result.rows.length > 0 ? `
+            ${(result.valid_rows && result.valid_rows.length > 0) ? `
                 <div class="mt-lg flex gap-sm">
                     <button class="btn btn-primary" onclick="Router.navigate('review')">
                         📋 Review Scenes
@@ -757,62 +743,55 @@ const Generation = {
         });
     },
 
-    pause() {
-        this.isPaused = true;
-        Toast.info('Job paused');
-        this.updateControls();
+    async pause() {
+        if (!App.currentJobId) return;
+        try {
+            await API.post(`/api/generation/${App.currentJobId}/pause`, {});
+            this.isPaused = true;
+            Toast.info('Job paused on backend');
+            this.updateControls();
+        } catch (e) {
+            Toast.error(`Pause failed: ${e.message}`);
+        }
     },
 
-    resume() {
-        this.isPaused = false;
-        Toast.success('Job resumed');
-        this.updateControls();
+    async resume() {
+        if (!App.currentJobId) return;
+        try {
+            await API.post(`/api/generation/${App.currentJobId}/resume`, {});
+            this.isPaused = false;
+            this.isRunning = true;
+            Toast.success('Job resumed on backend');
+            this.updateControls();
+        } catch (e) {
+            Toast.error(`Resume failed: ${e.message}`);
+        }
     },
 
-    cancel() {
+    async cancel() {
+        if (!App.currentJobId) return;
         if (!confirm('Cancel the current job? Completed work will be preserved.')) return;
-        this.isRunning = false;
-        this.isPaused = false;
-        Toast.warning('Job cancelled');
-        this.updateControls();
+        try {
+            await API.post(`/api/generation/${App.currentJobId}/cancel`, {});
+            this.isRunning = false;
+            this.isPaused = false;
+            Toast.warning('Job cancelled');
+            this.updateControls();
+        } catch (e) {
+            Toast.error(`Cancel failed: ${e.message}`);
+        }
     },
 
     async retryFailed() {
-        if (!App.currentJobId) {
-            Toast.error('No active job');
-            return;
-        }
+        if (!App.currentJobId) return;
         try {
-            const scenes = await DB.getScenes(App.currentJobId);
-            const failedScenes = scenes.filter(s => s.overall_status === 'FAILED');
-            if (failedScenes.length === 0) {
-                Toast.info('No failed scenes to retry.');
-                return;
-            }
-
-            // Reset failed scenes
-            for (const s of failedScenes) {
-                await DB.updateScene(s.id, { overall_status: 'PENDING', error_message: null });
-            }
-
-            const userSettings = await DB.getSettings();
-            const apiKey = userSettings?.google_api_key;
-            if (!apiKey) {
-                Toast.error('Google API Key not configured!');
-                return;
-            }
-
+            await API.post(`/api/generation/${App.currentJobId}/retry`, {});
             this.isRunning = true;
             this.isPaused = false;
-            this.queue = failedScenes;
-            App.completedScenes = 0;
-            App.failedScenes = 0;
-
-            Toast.success(`Retrying ${failedScenes.length} failed scenes`);
+            Toast.info('Retrying failed scenes...');
             this.updateControls();
-            this.processQueue(apiKey, Settings.getSettings());
-        } catch (err) {
-            Toast.error(err.message);
+        } catch (e) {
+            Toast.error(`Retry failed: ${e.message}`);
         }
     },
 
