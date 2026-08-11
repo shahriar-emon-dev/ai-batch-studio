@@ -25,10 +25,16 @@ const API = {
         if (options.body && !(options.body instanceof FormData)) {
             headers['Content-Type'] = 'application/json';
         }
-        const res = await fetch(`${window.API_BASE_URL || 'http://localhost:8000'}${endpoint}`, { ...options, headers });
+        const res = await fetch(`${window.API_BASE_URL || ''}${endpoint}`, { ...options, headers });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `Request failed: ${res.statusText}`);
+            let errorMsg = err.detail || `Request failed: ${res.statusText}`;
+            
+            if (res.status === 401) errorMsg = "Session expired. Please sign in again.";
+            else if (res.status === 429) errorMsg = "API usage limit reached. Generation paused.";
+            else if (res.status >= 500) errorMsg = "Something went wrong on the server. Please try again.";
+            
+            throw new Error(errorMsg);
         }
         return res.json();
     },

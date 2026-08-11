@@ -24,54 +24,73 @@ Built for large-scale content production. Upload hundreds of scenes, configure g
 
 ---
 
-## Quick Start (Windows)
+## Quick Start (Local Development)
 
 ### 1. Prerequisites
 
 - **Python 3.10+** installed
+- **Supabase Project** (Postgres DB)
 - **Google Gemini API Key** from [Google AI Studio](https://aistudio.google.com/)
-- **Google Cloud Service Account** (optional, for Text-to-Speech) from [Google Cloud Console](https://console.cloud.google.com/)
-- **FFmpeg** (optional, for video+audio merging) — [Download FFmpeg](https://ffmpeg.org/download.html)
+- **FFmpeg** (optional, for video+audio merging)
 
-### 2. Installation
+### 2. Installation & Environment Configuration
 
 ```bash
+# Clone or navigate to the repository
 cd "e:\video automation\ai_batch_studio"
 
+# Create and activate virtual environment
 python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Mac/Linux
 
-venv\Scripts\activate
-
+# Install backend requirements
 pip install -r requirements.txt
 ```
 
-### 3. Configuration
+### 3. Configure `.env`
 
 ```bash
 copy .env.example .env
 ```
 
-Edit `.env` and add your credentials:
+Edit `.env` and configure at least your Supabase settings:
 
 ```env
-# Required: Gemini API key for image/video generation
-GOOGLE_PROFILE_1_API_KEY=your-gemini-api-key-here
+# Required for DB connection & Authentication
+SUPABASE_URL=your-supabase-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Optional: Path to service account JSON for Google Cloud TTS
-GOOGLE_PROFILE_1_TTS_CREDENTIALS=C:\path\to\service-account.json
-
-# Optional: Second profile
-GOOGLE_PROFILE_2_API_KEY=
-GOOGLE_PROFILE_2_TTS_CREDENTIALS=
+# Required for encrypting API keys (Must be >= 32 chars)
+ENCRYPTION_KEY=change-this-to-a-32-byte-base64-string
 ```
 
-### 4. Run
+### 4. Run the Application
 
+The application serves both the FastAPI backend and the static frontend from the same server. 
+
+Start the server using Python module execution:
 ```bash
-python app.py
+python -m backend.app
+```
+*Or using uvicorn directly:*
+```bash
+uvicorn backend.app:app --reload
 ```
 
-Open **http://127.0.0.1:8000** in your browser.
+### 5. Access the Browser
+
+Open your browser and navigate to:
+**http://localhost:8000**
+
+> [!WARNING]
+> Do NOT use `http://0.0.0.0:8000` in your browser. `0.0.0.0` is a bind address for the server. Always use `localhost` or `127.0.0.1`.
+
+You can also access the interactive API documentation at:
+**http://localhost:8000/docs**
+
+---
 
 ---
 

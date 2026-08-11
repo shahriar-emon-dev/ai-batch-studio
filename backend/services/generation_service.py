@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 # In-memory state for jobs
 active_jobs: Dict[str, asyncio.Task] = {}
+recovery_lock = asyncio.Lock()
 
 async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, Any], api_key: str):
     """Processes a single scene: Image -> Audio -> Video."""
@@ -108,3 +109,35 @@ def cancel_generation(project_id: str):
     if project_id in active_jobs:
         active_jobs[project_id].cancel()
         del active_jobs[project_id]
+
+async def recover_pending_jobs():
+    """Recovers scenes stuck in generating or pending status on startup."""
+    if not admin_client:
+        logger.warning("No admin client available, skipping job recovery.")
+        return
+        
+    async with recovery_lock:
+        logger.info("Checking for pending/generating scenes to recover...")
+        try:
+            # Find all projects that are processing but have no active jobs
+            projects_res = admin_client.table("projects").select("id").in_("status", ["PENDING", "PROCESSING", "generating"]).execute()
+            
+            if not projects_res.data:
+                return
+                
+            project_ids = [p["id"] for p in projects_res.data]
+            
+            # For each project, fetch pending/generating scenes and start generation
+            for pid in project_ids:
+                if str(pid) not in active_jobs:
+                    scenes_res = admin_client.table("scenes").select("*").eq("project_id", pid).in_("status", ["pending", "generating", "PENDING", "PROCESSING"]).execute()
+                    if scenes_res.data:
+                        logger.info(f"Recovering {len(scenes_res.data)} scenes for project {pid}")
+                        
+                        # We need the API key for recovery. This is a bit tricky if we don't know the user's key.
+                        # For now, we update them to 'failed' so the user can manually retry, rather than leaving them hung forever.
+                        # Since we can't reliably read encrypted API keys without the user context easily here.
+                        admin_client.table("scenes").update({"status": "failed", "error_message": "Server restarted during generation. Please retry."}).eq("project_id", pid).in_("status", ["pending", "generating", "PENDING", "PROCESSING"]).execute()
+                        admin_client.table("projects").update({"status": "FAILED"}).eq("id", pid).execute()
+        except Exception as e:
+            logger.error(f"Failed to recover jobs: {e}")

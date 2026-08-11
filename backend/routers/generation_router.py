@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from backend.auth import get_token, verify_token
+from backend.auth import get_token, verify_token, decrypt_value
 from backend.database import get_db_client
 from backend.services.generation_service import start_generation, cancel_generation
 
@@ -20,12 +20,13 @@ async def start_gen(req: GenerationRequest, token: str = Depends(get_token)):
     if not scenes:
         return {"status": "ok", "message": "No pending or failed scenes"}
         
-    # Get API key from settings
-    settings_response = client.table("user_settings").select("google_api_key_1").execute()
-    if not settings_response.data or not settings_response.data[0].get("google_api_key_1"):
+    # Get API key from profiles
+    profiles_response = client.table("api_profiles").select("encrypted_credentials").eq("provider", "google").eq("is_active", True).execute()
+    if not profiles_response.data or not profiles_response.data[0].get("encrypted_credentials"):
         raise HTTPException(status_code=400, detail="Google API Key not configured")
         
-    api_key = settings_response.data[0]["google_api_key_1"]
+    encrypted_key = profiles_response.data[0]["encrypted_credentials"]
+    api_key = decrypt_value(encrypted_key)
     
     # Update project status
     client.table("projects").update({"status": "generating"}).eq("id", req.project_id).execute()
