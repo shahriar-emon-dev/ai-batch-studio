@@ -46,7 +46,7 @@ async def update_job_progress(job_id: int, project_id: str):
             job_update["status"] = "COMPLETED" if failed == 0 else "FAILED"
             job_update["completed_at"] = now_iso
             
-        admin_client.table("generation_jobs").update(job_update).eq("id", job_id).execute()
+        client.table("generation_jobs").update(job_update).eq("id", job_id).execute()
         
         # Update projects table summary
         proj_update = {
@@ -60,15 +60,16 @@ async def update_job_progress(job_id: int, project_id: str):
         elif processing > 0 or pending > 0:
             proj_update["status"] = "PROCESSING"
             
-        admin_client.table("projects").update(proj_update).eq("id", project_id).execute()
+        client.table("projects").update(proj_update).eq("id", project_id).execute()
     except Exception as e:
         logger.error(f"Failed to update job progress for job {job_id}: {e}")
 
 async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, Any], api_key: str, job_id: Optional[int] = None):
     """Processes a single scene: Visual -> Voice -> Merge, updating granular statuses."""
+    client = get_admin_client()
     try:
-        if admin_client:
-            admin_client.table("scenes").update({
+        if client:
+            client.table("scenes").update({
                 "visual_status": "VISUAL_GENERATING",
                 "overall_status": "PROCESSING"
             }).eq("id", scene_id).execute()
@@ -84,8 +85,8 @@ async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, An
             with open(image_path, "wb") as f:
                 f.write(image_bytes)
                 
-        if admin_client:
-            admin_client.table("scenes").update({
+        if client:
+            client.table("scenes").update({
                 "visual_status": "VISUAL_COMPLETED",
                 "visual_path": f"/output/images/{image_filename}",
                 "voice_status": "VOICE_GENERATING"
@@ -101,8 +102,8 @@ async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, An
             with open(audio_path, "wb") as f:
                 f.write(audio_bytes)
                 
-        if admin_client:
-            admin_client.table("scenes").update({
+        if client:
+            client.table("scenes").update({
                 "voice_status": "VOICE_COMPLETED",
                 "audio_path": f"/output/audio/{audio_filename}"
             }).eq("id", scene_id).execute()
@@ -114,8 +115,8 @@ async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, An
         if os.path.exists(image_path) and os.path.exists(audio_path) and not os.path.exists(video_path):
             await merge_image_audio(image_path, audio_path, video_path)
             
-        if admin_client:
-            admin_client.table("scenes").update({
+        if client:
+            client.table("scenes").update({
                 "overall_status": "COMPLETED",
                 "visual_path": f"/output/images/{image_filename}",
                 "audio_path": f"/output/audio/{audio_filename}",
@@ -125,16 +126,16 @@ async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, An
             
     except RateLimitException as rle:
         logger.warning(f"Rate limit hit during scene {scene_id}: {rle}")
-        if admin_client:
-            admin_client.table("scenes").update({
+        if client:
+            client.table("scenes").update({
                 "overall_status": "FAILED",
                 "error_message": "Rate limit / Quota exceeded (HTTP 429). Job paused."
             }).eq("id", scene_id).execute()
         raise rle
     except Exception as e:
         logger.error(f"Error processing scene {scene_id}: {e}")
-        if admin_client:
-            admin_client.table("scenes").update({
+        if client:
+            client.table("scenes").update({
                 "overall_status": "FAILED",
                 "error_message": str(e)
             }).eq("id", scene_id).execute()
@@ -144,16 +145,16 @@ async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, An
 
 async def generation_worker(queue: asyncio.Queue, api_key: str, job_id: Optional[int] = None):
     """Worker task that processes scenes from queue."""
+    client = get_admin_client()
     while True:
         job = await queue.get()
         try:
             await process_scene(job["project_id"], job["scene_id"], job["scene_data"], api_key, job_id=job_id)
         except RateLimitException:
             logger.warning("Worker encountered rate limit. Pausing job queue processing.")
-            # Mark job as paused in Supabase
-            if admin_client and job_id:
-                admin_client.table("generation_jobs").update({"status": "PAUSED"}).eq("id", job_id).execute()
-                admin_client.table("projects").update({"status": "PAUSED"}).eq("id", job["project_id"]).execute()
+            if client and job_id:
+                client.table("generation_jobs").update({"status": "PAUSED"}).eq("id", job_id).execute()
+                client.table("projects").update({"status": "PAUSED"}).eq("id", job["project_id"]).execute()
             break
         except asyncio.CancelledError:
             break
@@ -167,12 +168,12 @@ async def start_generation(project_id: str, scenes: List[Dict[str, Any]], api_ke
     if project_id in active_jobs and active_jobs[project_id].get("status") == "PROCESSING":
         return active_jobs[project_id]["job_id"]
         
-    # Create or update generation_jobs record
+    client = get_admin_client()
     job_id = None
-    if admin_client and user_id:
+    if client and user_id:
         try:
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            job_res = admin_client.table("generation_jobs").insert({
+            job_res = client.table("generation_jobs").insert({
                 "project_id": project_id,
                 "user_id": user_id,
                 "status": "PROCESSING",
@@ -182,7 +183,7 @@ async def start_generation(project_id: str, scenes: List[Dict[str, Any]], api_ke
             }).execute()
             if job_res.data:
                 job_id = job_res.data[0]["id"]
-                admin_client.table("projects").update({"status": "PROCESSING", "started_at": now_iso}).eq("id", project_id).execute()
+                client.table("projects").update({"status": "PROCESSING", "started_at": now_iso}).eq("id", project_id).execute()
         except Exception as e:
             logger.error(f"Failed to create generation_job: {e}")
 
@@ -218,6 +219,7 @@ async def start_generation(project_id: str, scenes: List[Dict[str, Any]], api_ke
 
 def pause_generation(project_id: str):
     """Pauses active generation for a project."""
+    client = get_admin_client()
     if project_id in active_jobs:
         job_info = active_jobs[project_id]
         job_info["status"] = "PAUSED"
@@ -227,13 +229,14 @@ def pause_generation(project_id: str):
         job_id = job_info.get("job_id")
         del active_jobs[project_id]
         
-        if admin_client:
-            admin_client.table("projects").update({"status": "PAUSED"}).eq("id", project_id).execute()
+        if client:
+            client.table("projects").update({"status": "PAUSED"}).eq("id", project_id).execute()
             if job_id:
-                admin_client.table("generation_jobs").update({"status": "PAUSED"}).eq("id", job_id).execute()
+                client.table("generation_jobs").update({"status": "PAUSED"}).eq("id", job_id).execute()
 
 def cancel_generation(project_id: str):
     """Cancels active generation for a project."""
+    client = get_admin_client()
     if project_id in active_jobs:
         job_info = active_jobs[project_id]
         for w in job_info.get("workers", []):
@@ -242,21 +245,22 @@ def cancel_generation(project_id: str):
         job_id = job_info.get("job_id")
         del active_jobs[project_id]
         
-        if admin_client:
-            admin_client.table("projects").update({"status": "CANCELLED"}).eq("id", project_id).execute()
+        if client:
+            client.table("projects").update({"status": "CANCELLED"}).eq("id", project_id).execute()
             if job_id:
-                admin_client.table("generation_jobs").update({"status": "CANCELLED"}).eq("id", job_id).execute()
+                client.table("generation_jobs").update({"status": "CANCELLED"}).eq("id", job_id).execute()
 
 async def recover_pending_jobs():
     """Recovers scenes stuck in generating or pending status on startup."""
-    if not admin_client:
+    client = get_admin_client()
+    if not client:
         logger.warning("No admin client available, skipping job recovery.")
         return
         
     async with recovery_lock:
         logger.info("Checking for pending/generating scenes to recover...")
         try:
-            projects_res = admin_client.table("projects").select("id").in_("status", ["PENDING", "PROCESSING", "generating"]).execute()
+            projects_res = client.table("projects").select("id").in_("status", ["PENDING", "PROCESSING", "generating"]).execute()
             if not projects_res.data:
                 return
                 
@@ -264,14 +268,14 @@ async def recover_pending_jobs():
             
             for pid in project_ids:
                 if str(pid) not in active_jobs:
-                    scenes_res = admin_client.table("scenes").select("*").eq("project_id", pid).in_("overall_status", ["pending", "generating", "PENDING", "PROCESSING", "VISUAL_GENERATING", "VOICE_GENERATING"]).execute()
+                    scenes_res = client.table("scenes").select("*").eq("project_id", pid).in_("overall_status", ["pending", "generating", "PENDING", "PROCESSING", "VISUAL_GENERATING", "VOICE_GENERATING"]).execute()
                     if scenes_res.data:
                         logger.info(f"Recovering {len(scenes_res.data)} scenes for project {pid}")
-                        admin_client.table("scenes").update({
+                        client.table("scenes").update({
                             "overall_status": "FAILED",
                             "error_message": "Server restarted during generation. Please retry."
                         }).eq("project_id", pid).in_("overall_status", ["pending", "generating", "PENDING", "PROCESSING", "VISUAL_GENERATING", "VOICE_GENERATING"]).execute()
                         
-                        admin_client.table("projects").update({"status": "FAILED"}).eq("id", pid).execute()
+                        client.table("projects").update({"status": "FAILED"}).eq("id", pid).execute()
         except Exception as e:
             logger.error(f"Failed to recover jobs: {e}")
