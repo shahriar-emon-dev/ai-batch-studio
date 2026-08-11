@@ -69,13 +69,13 @@
 
                 <!-- CSV Upload Dropzone -->
                 <div class="glass-panel mb-4" style="padding: 2rem;" id="uploadPanel">
-                    <h3>Upload Any CSV File</h3>
-                    <p class="text-muted mt-1">Our intelligent column classifier automatically detects, classifies, and maps any arbitrary CSV structure.</p>
+                    <h3>Upload CSV Scene List</h3>
+                    <p class="text-muted mt-1">Our intelligent classifier detects headers, normalizes fields, and preserves all custom metadata.</p>
                     
                     <div class="dropzone mt-4" id="dropzone">
                         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;" id="dropzoneIcon">📁</div>
                         <h4 id="dropzoneTitle">Drag & Drop CSV file here, or click to browse</h4>
-                        <p class="text-muted mt-1" style="font-size: 0.85rem;" id="dropzoneSub">Supports arbitrary CSV columns & encodings</p>
+                        <p class="text-muted mt-1" style="font-size: 0.85rem;" id="dropzoneSub">Supports UTF-8, ASCII, and custom column encodings</p>
                         <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
                     </div>
                 </div>
@@ -131,8 +131,8 @@
                     </div>
 
                     <div class="flex justify-end gap-2">
-                        <button class="btn btn-secondary" id="btnCancelMapping">Cancel</button>
-                        <button class="btn btn-primary" id="btnConfirmImport">Confirm Column Mapping & Import Scenes</button>
+                        <button class="btn btn-secondary" id="btnCancelMapping">Dismiss Analysis</button>
+                        <button class="btn btn-primary" id="btnConfirmImport">🔄 Re-Apply Column Mapping</button>
                     </div>
                 </div>
 
@@ -214,6 +214,11 @@
                     document.getElementById('dropzoneIcon').textContent = '✅';
                     document.getElementById('dropzoneTitle').textContent = `CSV Active: ${scenes.length} Scenes Loaded in Workspace`;
                     document.getElementById('dropzoneSub').textContent = 'Click or drag a new CSV file to overwrite scenes';
+                } else {
+                    document.getElementById('csvSuccessBadge').classList.add('hidden');
+                    document.getElementById('dropzoneIcon').textContent = '📁';
+                    document.getElementById('dropzoneTitle').textContent = 'Drag & Drop CSV file here, or click to browse';
+                    document.getElementById('dropzoneSub').textContent = 'Supports UTF-8, ASCII, and custom column encodings';
                 }
 
                 if (!scenes || scenes.length === 0) {
@@ -259,7 +264,17 @@
                     const result = await API.post('/api/upload/csv', formData);
                     lastAnalysisResult = result;
 
-                    // Display Analysis Panel
+                    // Automatically import valid scenes into Supabase project workspace
+                    if (result.valid_rows && result.valid_rows.length > 0) {
+                        await API.post(`/api/projects/${currentProjectId}/scenes`, {
+                            scenes: result.valid_rows
+                        });
+
+                        Toast.success(`Successfully imported ${result.valid_count} scenes from ${file.name}!`);
+                        await loadProjectDetails();
+                    }
+
+                    // Render Analysis Panel
                     const panel = document.getElementById('csvAnalysisPanel');
                     panel.classList.remove('hidden');
                     document.getElementById('csvAnalysisFileSub').textContent = `File: ${result.filename} | ${result.total_rows} Rows | ${result.columns_count} Columns`;
@@ -269,7 +284,7 @@
                     document.getElementById('statTotalCols').textContent = result.columns_count;
                     document.getElementById('statEncoding').textContent = `${result.encoding} (${result.delimiter})`;
 
-                    // Badges
+                    // Media Badges
                     const badgesEl = document.getElementById('detectedRequirementsBadges');
                     const reqs = result.detected_media_requirements || {};
                     badgesEl.innerHTML = `
@@ -306,9 +321,8 @@
                         </tr>
                     `).join('');
 
-                    panel.scrollIntoView({ behavior: 'smooth' });
                 } catch(e) {
-                    Toast.error(`CSV Analysis Failed: ${e.message}`);
+                    Toast.error(`CSV Upload Failed: ${e.message}`);
                 }
             }
 
@@ -317,7 +331,7 @@
             };
 
             document.getElementById('btnConfirmImport').onclick = async () => {
-                if (!lastAnalysisResult || !lastAnalysisResult.valid_rows) return;
+                if (!lastAnalysisResult || (!lastAnalysisResult.raw_rows && !lastAnalysisResult.valid_rows)) return;
 
                 // Collect manual column overrides
                 const overrides = {};
@@ -326,32 +340,39 @@
                     overrides[orig] = sel.value;
                 });
 
-                // Apply custom overrides & re-normalize valid rows
-                const normalizedScenes = lastAnalysisResult.valid_rows.map(row => {
-                    const scene = { custom_metadata: {} };
-                    Object.entries(row).forEach(([k, v]) => {
-                        const target = overrides[k] || k;
-                        if (target === 'ignore') return;
-                        if (target === 'custom_metadata') {
-                            scene.custom_metadata[k] = v;
+                const rowsToMap = lastAnalysisResult.raw_rows || lastAnalysisResult.valid_rows;
+
+                // Re-normalize rows according to overrides
+                const normalizedScenes = rowsToMap.map((row, idx) => {
+                    const scene = { id: String(idx + 1), custom_metadata: {} };
+                    Object.entries(row).forEach(([origKey, val]) => {
+                        const valStr = typeof val === 'string' ? val.trim() : String(val || '');
+                        const targetField = overrides[origKey] || 'custom_metadata';
+                        
+                        if (targetField === 'ignore') return;
+                        if (targetField === 'custom_metadata') {
+                            scene.custom_metadata[origKey] = valStr;
                         } else {
-                            scene[target] = v;
+                            scene[targetField] = valStr;
                         }
                     });
+
+                    if (!scene.aspect_ratio) scene.aspect_ratio = '16:9';
+                    if (!scene.media_type) scene.media_type = 'image';
                     return scene;
                 });
 
                 try {
-                    Toast.info("Importing mapped scenes into project workspace...");
+                    Toast.info("Re-applying custom column mappings...");
                     await API.post(`/api/projects/${currentProjectId}/scenes`, {
                         scenes: normalizedScenes
                     });
 
-                    Toast.success(`Successfully imported ${normalizedScenes.length} scenes!`);
+                    Toast.success(`Successfully updated ${normalizedScenes.length} scenes with new mapping!`);
                     document.getElementById('csvAnalysisPanel').classList.add('hidden');
-                    loadProjectDetails();
+                    await loadProjectDetails();
                 } catch(e) {
-                    Toast.error(`Import failed: ${e.message}`);
+                    Toast.error(`Mapping update failed: ${e.message}`);
                 }
             };
 
@@ -394,7 +415,7 @@
                     });
 
                     Toast.success("Sample CSV scenes loaded successfully!");
-                    loadProjectDetails();
+                    await loadProjectDetails();
                 } catch(e) {
                     Toast.error(`Failed to load sample CSV: ${e.message}`);
                 }

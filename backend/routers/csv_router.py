@@ -11,9 +11,9 @@ VALID_ASPECT_RATIOS = {"16:9", "9:16", "1:1", "4:3", "21:9"}
 VALID_MEDIA_TYPES = {"image", "voice", "video", "image_voice", "video_voice"}
 
 COLUMN_CANONICAL_MAP = {
-    "id": ["id", "scene_id", "scene_number", "scene", "number", "#"],
-    "visual_prompt": ["visual_prompt", "image_prompt", "visual description", "scene description", "prompt", "image description", "visual_description", "visual", "concept", "description"],
-    "voiceover_script": ["voiceover_script", "voiceover", "narration", "narration_script", "voice_script", "audio_script", "script", "speech", "narration_text", "audio_text", "speech_text"],
+    "id": ["id", "scene_id", "scene_number", "scene", "number", "#", "index"],
+    "visual_prompt": ["visual_prompt", "image_prompt", "visual description", "scene description", "prompt", "image description", "visual_description", "visual", "concept", "description", "details", "image"],
+    "voiceover_script": ["voiceover_script", "voiceover", "narration", "narration_script", "voice_script", "audio_script", "script", "speech", "narration_text", "audio_text", "speech_text", "text", "voice_text", "dialogue"],
     "aspect_ratio": ["aspect_ratio", "ratio", "image_ratio", "video_ratio", "format", "dimension", "aspect"],
     "duration": ["duration", "length", "time", "sec", "seconds"],
     "master_prompt": ["master_prompt", "master", "global_prompt", "style_prompt", "master_style"],
@@ -26,9 +26,6 @@ COLUMN_CANONICAL_MAP = {
 }
 
 def classify_column(original_header: str) -> Tuple[str, int]:
-    """
-    Intelligently classifies a CSV header into a target schema field with a confidence score.
-    """
     clean = original_header.strip().lower().replace("-", "_").replace(" ", "_")
     
     # Exact match check
@@ -37,14 +34,13 @@ def classify_column(original_header: str) -> Tuple[str, int]:
             confidence = 99 if clean == canonical_name else 95
             return canonical_name, confidence
             
-    # Fuzzy substring match check
+    # Substring match check
     for canonical_name, aliases in COLUMN_CANONICAL_MAP.items():
         for alias in aliases:
-            if len(alias) > 3 and (alias in clean or clean in alias):
+            if len(alias) >= 3 and (alias in clean or clean in alias):
                 return canonical_name, 88
                 
-    # Default to custom metadata
-    return "custom_metadata", 80
+    return "custom_metadata", 70
 
 @router.post("")
 async def upload_csv(file: UploadFile = File(...), token: str = Depends(get_token)):
@@ -73,7 +69,7 @@ async def upload_csv(file: UploadFile = File(...), token: str = Depends(get_toke
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         raw_headers = reader.fieldnames or []
         
-        # 3. Classify Columns with Confidence Scores
+        # 3. Classify Columns
         column_analysis: List[Dict[str, Any]] = []
         mapping_dict: Dict[str, str] = {}
         
@@ -98,16 +94,21 @@ async def upload_csv(file: UploadFile = File(...), token: str = Depends(get_toke
 
         valid_rows: List[Dict[str, Any]] = []
         invalid_rows: List[Dict[str, Any]] = []
+        raw_rows: List[Dict[str, str]] = []
         seen_ids = set()
         
         for idx, row in enumerate(reader, start=1):
+            raw_rows.append(row)
             normalized_row: Dict[str, Any] = {
                 "custom_metadata": {}
             }
             
             # Map canonical fields & preserve unmapped columns in custom_metadata
+            non_empty_values = {}
             for original_header, val in row.items():
                 val_str = (val or "").strip()
+                if val_str:
+                    non_empty_values[original_header] = val_str
                 target_field = mapping_dict.get(original_header, "custom_metadata")
                 
                 if target_field == "custom_metadata":
@@ -117,18 +118,24 @@ async def upload_csv(file: UploadFile = File(...), token: str = Depends(get_toke
                     
             errors = []
             
+            # Smart Fallback for missing visual_prompt or voiceover_script
+            if not normalized_row.get("visual_prompt") and non_empty_values:
+                # Pick the longest text value as visual_prompt
+                longest_key = max(non_empty_values, key=lambda k: len(non_empty_values[k]))
+                normalized_row["visual_prompt"] = non_empty_values[longest_key]
+                has_images = True
+
             # Ensure ID
             scene_id = normalized_row.get("id") or str(idx)
             normalized_row["id"] = scene_id
             if scene_id in seen_ids:
-                errors.append(f"Duplicate scene ID '{scene_id}'")
-            else:
-                seen_ids.add(scene_id)
+                scene_id = f"{scene_id}_{idx}"
+            seen_ids.add(scene_id)
+            normalized_row["id"] = scene_id
                 
             # Aspect ratio normalization
             ar = normalized_row.get("aspect_ratio", "16:9")
             if ar and ar not in VALID_ASPECT_RATIOS:
-                errors.append(f"Invalid aspect_ratio '{ar}'. Defaulting to 16:9.")
                 normalized_row["aspect_ratio"] = "16:9"
             else:
                 normalized_row["aspect_ratio"] = ar or "16:9"
@@ -147,13 +154,10 @@ async def upload_csv(file: UploadFile = File(...), token: str = Depends(get_toke
             normalized_row["media_type"] = mt
 
             # Require at least visual_prompt or voiceover_script
-            if not normalized_row.get("visual_prompt") and not normalized_row.get("voiceover_script"):
-                errors.append("Row contains neither visual prompt nor voiceover script")
-
-            if errors and not normalized_row.get("visual_prompt") and not normalized_row.get("voiceover_script"):
-                invalid_rows.append({"row_number": idx, "data": normalized_row, "errors": errors})
-            else:
+            if normalized_row.get("visual_prompt") or normalized_row.get("voiceover_script"):
                 valid_rows.append(normalized_row)
+            else:
+                invalid_rows.append({"row_number": idx, "data": normalized_row, "errors": ["No text content found"]})
 
         return {
             "filename": file.filename,
@@ -164,7 +168,7 @@ async def upload_csv(file: UploadFile = File(...), token: str = Depends(get_toke
             "delimiter": delimiter,
             "detected_columns": column_analysis,
             "detected_media_requirements": {
-                "has_images": has_images,
+                "has_images": has_images or True,
                 "has_voiceovers": has_voiceovers,
                 "has_videos": has_videos
             },
@@ -172,6 +176,7 @@ async def upload_csv(file: UploadFile = File(...), token: str = Depends(get_toke
             "valid_count": len(valid_rows),
             "invalid_count": len(invalid_rows),
             "valid_rows": valid_rows,
+            "raw_rows": raw_rows,
             "invalid_rows": invalid_rows
         }
     except Exception as e:
