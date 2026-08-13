@@ -3,144 +3,177 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Workspace - AI Content Studio</title>
+    <title>Project Workspace - AI ContentStudio</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/env.js" defer></script>
+    <script src="/config.js" defer></script>
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
     <div class="app-layout">
-        <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="sidebar-brand">
-                AI Content <span>Studio</span>
-            </div>
+            <div class="sidebar-brand">AI Content <span>Studio</span></div>
             <nav class="sidebar-nav">
-                <a href="/dashboard.html" class="nav-item">
-                    <i>📊</i> Dashboard
-                </a>
-                <a href="/projects.html" class="nav-item active">
-                    <i>📁</i> Projects
-                </a>
-                <a href="/generation-progress.html" class="nav-item">
-                    <i>⚡</i> Batch Generation
-                </a>
-                <a href="/assets.html" class="nav-item">
-                    <i>🖼️</i> Asset Browser
-                </a>
-                <a href="/export.html" class="nav-item">
-                    <i>📦</i> Selective Export
-                </a>
+                <a href="/dashboard.html" class="nav-item"><i>📊</i> Dashboard</a>
+                <a href="/projects.html" class="nav-item active"><i>📁</i> Projects</a>
+                <a href="/generation-progress.html" class="nav-item"><i>⚡</i> Batch Generation</a>
+                <a href="/assets.html" class="nav-item"><i>🖼️</i> Asset Browser</a>
+                <a href="/export.html" class="nav-item"><i>📦</i> Selective Export</a>
             </nav>
             <div class="sidebar-footer">
-                <a href="/settings.html" class="nav-item">
-                    <i>⚙️</i> Settings
-                </a>
-                <a href="#" id="logoutBtn" class="nav-item">
-                    <i>🚪</i> Logout
-                </a>
+                <a href="/settings.html" class="nav-item"><i>⚙️</i> Settings</a>
+                <a href="#" id="logoutBtn" class="nav-item"><i>🚪</i> Logout</a>
             </div>
         </aside>
 
-        <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
-                <div class="page-title" id="projectNameHeading">Loading Project Workspace...</div>
+                <div class="page-title" id="projectNameHeading">Loading project workspace…</div>
                 <div class="user-menu">
                     <button id="btnStartGeneration" class="btn btn-primary btn-sm">⚡ Start Batch Generation</button>
-                    <span id="userEmail">Loading...</span>
+                    <span id="userEmail">Loading…</span>
                 </div>
             </header>
 
             <div class="page-container">
-                <!-- Project Summary Banner -->
+                <!-- Project summary -->
                 <div class="glass-panel mb-4" style="padding: 1.5rem;">
                     <div class="flex justify-between items-center">
                         <div>
-                            <h2 id="projTitle">Project Title</h2>
-                            <p class="text-muted mt-1" id="projSub">Mode: IMAGE_VOICE | Status: PENDING</p>
+                            <h2 id="projTitle">Project</h2>
+                            <p class="text-muted mt-1" id="projSub">Loading…</p>
                         </div>
                         <div class="flex gap-2">
+                            <a href="#" id="btnOpenProgress" class="btn btn-secondary btn-sm">📈 Live Progress</a>
                             <button id="btnLoadSample" class="btn btn-secondary btn-sm">📄 Load Sample CSV</button>
                         </div>
                     </div>
                 </div>
 
-                <!-- CSV Upload Dropzone -->
-                <div class="glass-panel mb-4" style="padding: 2rem;" id="uploadPanel">
+                <!-- CSV upload -->
+                <div class="glass-panel mb-4" style="padding: 2rem;">
                     <h3>Upload CSV Scene List</h3>
-                    <p class="text-muted mt-1">Our intelligent classifier detects headers, normalizes fields, and preserves all custom metadata.</p>
-                    
+                    <p class="text-muted mt-1">Headers are detected automatically, values are normalized, and any column we do not recognise is preserved as custom metadata.</p>
+
                     <div class="dropzone mt-4" id="dropzone">
                         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;" id="dropzoneIcon">📁</div>
-                        <h4 id="dropzoneTitle">Drag & Drop CSV file here, or click to browse</h4>
-                        <p class="text-muted mt-1" style="font-size: 0.85rem;" id="dropzoneSub">Supports UTF-8, ASCII, and custom column encodings</p>
+                        <h4 id="dropzoneTitle">Drag &amp; drop a CSV file here, or click to browse</h4>
+                        <p class="text-muted mt-1" style="font-size: 0.85rem;" id="dropzoneSub">Detects encoding, delimiter and column meaning automatically</p>
                         <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
                     </div>
                 </div>
 
-                <!-- Interactive CSV Analysis & Column Mapping Card (Initially Hidden) -->
-                <div class="glass-panel mb-4 hidden" id="csvAnalysisPanel" style="padding: 2rem; border-left: 4px solid var(--primary);">
+                <!-- CSV analysis + column mapping -->
+                <div class="glass-panel mb-4 hidden" id="csvAnalysisPanel" style="padding: 2rem;">
                     <div class="flex justify-between items-center mb-4">
                         <div>
-                            <h3>Intelligent CSV Analysis Summary</h3>
-                            <p class="text-muted mt-1" id="csvAnalysisFileSub">Analyzing uploaded file...</p>
+                            <h3>CSV Analysis</h3>
+                            <p class="text-muted mt-1" id="csvAnalysisFileSub">—</p>
                         </div>
                         <div id="detectedRequirementsBadges" class="flex gap-sm"></div>
                     </div>
 
-                    <!-- File Metrics Grid -->
                     <div class="stats-grid mb-4">
                         <div class="stat-card blue">
                             <div class="stat-label">File Size</div>
-                            <div class="stat-value blue" id="statFileSize">0 KB</div>
+                            <div class="stat-value blue" id="statFileSize">—</div>
                         </div>
                         <div class="stat-card purple">
-                            <div class="stat-label">Total Rows</div>
-                            <div class="stat-value purple" id="statTotalRows">0</div>
+                            <div class="stat-label">Rows (valid / invalid)</div>
+                            <div class="stat-value purple" id="statTotalRows">—</div>
                         </div>
                         <div class="stat-card green">
                             <div class="stat-label">Detected Columns</div>
-                            <div class="stat-value green" id="statTotalCols">0</div>
+                            <div class="stat-value green" id="statTotalCols">—</div>
                         </div>
                         <div class="stat-card blue">
                             <div class="stat-label">Encoding / Delimiter</div>
-                            <div class="stat-value blue" style="font-size: 1.3rem; margin-top:0.3rem;" id="statEncoding">—</div>
+                            <div class="stat-value blue" style="font-size: 1.2rem; margin-top: 0.4rem;" id="statEncoding">—</div>
                         </div>
                     </div>
 
-                    <!-- Column Mapping Table -->
-                    <h4 class="mb-2">Detected Column Mappings & Manual Overrides</h4>
-                    <p class="text-muted mb-3" style="font-size: 0.85rem;">Adjust mapping targets if required. Unmapped columns will be securely stored as custom metadata.</p>
+                    <h4 class="mb-2">Column Mapping</h4>
+                    <p class="text-muted mb-3" style="font-size: 0.85rem;">
+                        Low-confidence columns are flagged. Change any target below and re-apply — normalization runs on the server so the mapping you see is the mapping that generates.
+                    </p>
 
                     <div class="table-container mb-4">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Original CSV Header</th>
+                                    <th>CSV Column</th>
                                     <th>Detected Meaning</th>
-                                    <th>Confidence Score</th>
-                                    <th>Target Schema Field (Override)</th>
+                                    <th>Confidence</th>
+                                    <th>Type</th>
+                                    <th>Non-empty</th>
+                                    <th>Example</th>
+                                    <th>Mapping</th>
                                 </tr>
                             </thead>
                             <tbody id="columnMappingTableBody">
-                                <tr><td colspan="4" class="text-muted text-center">Analyzing columns...</td></tr>
+                                <tr><td colspan="7" class="text-muted">Analyzing columns…</td></tr>
                             </tbody>
                         </table>
                     </div>
 
+                    <!-- Data preview: every row in one scrollable table (§22) -->
+                    <div class="flex justify-between items-center mb-2">
+                        <h4>Data Preview</h4>
+                        <div class="flex gap-2 items-center">
+                            <input type="search" id="previewSearch" class="form-control" placeholder="Search all rows…" style="width: 240px;">
+                            <span class="text-muted" id="previewPageInfo" style="font-size: 0.85rem;">—</span>
+                        </div>
+                    </div>
+                    <p class="text-muted mb-2" style="font-size: 0.8rem;">
+                        Scroll vertically and horizontally to inspect the whole file. Click any cell to expand its full value.
+                    </p>
+                    <div class="table-container mb-4" id="previewScroller"
+                         style="max-height: 460px; overflow: auto; position: relative;">
+                        <table style="min-width: 100%;">
+                            <thead id="previewHead" style="position: sticky; top: 0; z-index: 2;"></thead>
+                            <tbody id="previewBody">
+                                <tr><td class="text-muted">Upload a CSV to preview its rows.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <style>
+                        #previewScroller thead th {
+                            position: sticky; top: 0;
+                            background: #12121c;
+                            box-shadow: inset 0 -1px 0 rgba(255,255,255,0.12);
+                            white-space: nowrap;
+                        }
+                        #previewScroller td { vertical-align: top; }
+                        #previewScroller td.preview-cell {
+                            max-width: 320px; cursor: pointer;
+                            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                        }
+                        #previewScroller td.preview-cell.expanded {
+                            white-space: pre-wrap; word-break: break-word; overflow: visible;
+                        }
+                        #previewScroller td.row-number {
+                            position: sticky; left: 0; background: #12121c;
+                            font-variant-numeric: tabular-nums; color: #8b8ba7; z-index: 1;
+                        }
+                    </style>
+
                     <div class="flex justify-end gap-2">
-                        <button class="btn btn-secondary" id="btnCancelMapping">Dismiss Analysis</button>
-                        <button class="btn btn-primary" id="btnConfirmImport">🔄 Re-Apply Column Mapping</button>
+                        <button class="btn btn-secondary" id="btnCancelMapping">Dismiss</button>
+                        <button class="btn btn-primary" id="btnConfirmImport">✅ Apply Mapping &amp; Import Scenes</button>
                     </div>
                 </div>
 
-                <!-- Scene Editor Table -->
+                <!-- Scenes -->
                 <div class="glass-panel" style="padding: 1.5rem;">
                     <div class="flex justify-between items-center mb-4">
                         <h3>Project Scenes (<span id="sceneCount">0</span>)</h3>
-                        <span id="csvSuccessBadge" class="badge badge-success hidden">✔ Scenes Active</span>
+                        <div class="flex gap-2 items-center">
+                            <span id="csvSuccessBadge" class="badge badge-success hidden">Scenes active</span>
+                            <button class="btn btn-secondary btn-sm" id="btnRefreshScenes">↻ Refresh</button>
+                        </div>
                     </div>
 
                     <div class="table-container">
@@ -150,18 +183,20 @@
                                     <th>#</th>
                                     <th>Visual Prompt</th>
                                     <th>Voiceover Script</th>
-                                    <th>Aspect Ratio</th>
-                                    <th>Media Type</th>
+                                    <th>Ratio</th>
+                                    <th>Media</th>
+                                    <th>Image</th>
+                                    <th>Voice</th>
                                     <th>Status</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="scenesTableBody">
-                                <tr><td colspan="6" class="text-muted text-center">No scenes imported. Upload a CSV file or click "Load Sample CSV" above.</td></tr>
+                                <tr><td colspan="9" class="text-muted">No scenes yet. Upload a CSV or load the sample scenes above.</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
-
             </div>
         </main>
     </div>
@@ -169,275 +204,353 @@
     <script>
         let currentProjectId = null;
         let currentScenes = [];
-        let lastAnalysisResult = null;
+        let analysis = null;              // last CSV analysis response
+        let previewSearch = '';
 
         document.addEventListener('DOMContentLoaded', async () => {
-            const user = await Auth.requireAuth();
+            const user = await Shell.init();
             if (!user) return;
 
-            document.getElementById('userEmail').textContent = user.email;
-
-            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                await Auth.signOut();
-                window.location.href = '/login.html';
-            });
-
-            const urlParams = new URLSearchParams(window.location.search);
-            currentProjectId = urlParams.get('id');
-
+            currentProjectId = new URLSearchParams(window.location.search).get('id');
             if (!currentProjectId) {
                 window.location.href = '/projects.html';
                 return;
             }
 
-            async function loadProjectDetails() {
-                try {
-                    const project = await API.get(`/api/projects/${currentProjectId}`);
-                    document.getElementById('projectNameHeading').textContent = `Workspace: ${project.name}`;
-                    document.getElementById('projTitle').textContent = project.name;
-                    document.getElementById('projSub').textContent = `Mode: ${project.mode || 'IMAGE_VOICE'} | Status: ${project.status || 'PENDING'}`;
-                    
-                    currentScenes = project.scenes || [];
-                    renderScenesTable(currentScenes);
-                } catch(e) {
-                    Toast.error("Failed to load project details");
-                }
+            document.getElementById('btnOpenProgress').href = `/generation-progress.html?project_id=${currentProjectId}`;
+
+            await loadProject();
+            bindUpload();
+            bindMapping();
+            bindPreview();
+
+            document.getElementById('btnRefreshScenes').onclick = () => loadProject();
+            document.getElementById('btnLoadSample').onclick = loadSample;
+            document.getElementById('btnStartGeneration').onclick = startGeneration;
+        });
+
+        // ----------------------------------------------------- project + scenes
+        async function loadProject() {
+            try {
+                const project = await API.get(`/api/projects/${currentProjectId}`);
+                document.getElementById('projectNameHeading').textContent = `Workspace: ${project.name}`;
+                document.getElementById('projTitle').textContent = project.name;
+
+                const csv = (project.csv_files || [])[0];
+                document.getElementById('projSub').textContent =
+                    `Mode: ${project.mode || 'IMAGE_VOICE'} · Status: ${project.status || 'PENDING'} · ` +
+                    `${project.completed_scenes || 0}/${project.total_scenes || 0} scenes completed` +
+                    (csv ? ` · Source: ${csv.filename}` : '');
+
+                currentScenes = project.scenes || [];
+                renderScenes();
+            } catch (err) {
+                Toast.error(`Failed to load project: ${err.message}`);
+            }
+        }
+
+        function renderScenes() {
+            const body = document.getElementById('scenesTableBody');
+            document.getElementById('sceneCount').textContent = currentScenes.length;
+
+            const hasScenes = currentScenes.length > 0;
+            document.getElementById('csvSuccessBadge').classList.toggle('hidden', !hasScenes);
+            document.getElementById('dropzoneIcon').textContent = hasScenes ? '✅' : '📁';
+            document.getElementById('dropzoneTitle').textContent = hasScenes
+                ? `${currentScenes.length} scenes loaded — drop a new CSV to replace them`
+                : 'Drag & drop a CSV file here, or click to browse';
+
+            if (!hasScenes) {
+                body.innerHTML = '<tr><td colspan="9" class="text-muted">No scenes yet. Upload a CSV or load the sample scenes above.</td></tr>';
+                return;
             }
 
-            function renderScenesTable(scenes) {
-                const tbody = document.getElementById('scenesTableBody');
-                document.getElementById('sceneCount').textContent = scenes.length;
+            body.innerHTML = currentScenes.map((s, i) => `
+                <tr>
+                    <td class="font-mono">${Fmt.esc(s.scene_number || i + 1)}</td>
+                    <td class="truncate" style="max-width:240px;" title="${Fmt.esc(s.visual_prompt)}">${Fmt.esc(Fmt.truncate(s.visual_prompt, 70)) || '—'}</td>
+                    <td class="truncate" style="max-width:240px;" title="${Fmt.esc(s.voiceover_script)}">${Fmt.esc(Fmt.truncate(s.voiceover_script, 70)) || '—'}</td>
+                    <td>${Fmt.esc(s.aspect_ratio || '16:9')}</td>
+                    <td><span class="badge badge-secondary">${Fmt.esc(s.media_type || 'image')}</span></td>
+                    <td>${Status.badge(s.visual_status)}</td>
+                    <td>${Status.badge(s.voice_status)}</td>
+                    <td>${Status.badge(s.overall_status)}</td>
+                    <td>
+                        ${s.overall_status === 'FAILED'
+                            ? `<button class="btn btn-ghost btn-sm" onclick="retryScene(${s.id})" title="Retry this scene">🔄</button>`
+                            : ''}
+                        ${['PENDING', 'FAILED'].includes(s.overall_status)
+                            ? `<button class="btn btn-ghost btn-sm" onclick="skipScene(${s.id})" title="Skip">⏭</button>`
+                            : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
 
-                if (scenes.length > 0) {
-                    document.getElementById('csvSuccessBadge').classList.remove('hidden');
-                    document.getElementById('dropzoneIcon').textContent = '✅';
-                    document.getElementById('dropzoneTitle').textContent = `CSV Active: ${scenes.length} Scenes Loaded in Workspace`;
-                    document.getElementById('dropzoneSub').textContent = 'Click or drag a new CSV file to overwrite scenes';
-                } else {
-                    document.getElementById('csvSuccessBadge').classList.add('hidden');
-                    document.getElementById('dropzoneIcon').textContent = '📁';
-                    document.getElementById('dropzoneTitle').textContent = 'Drag & Drop CSV file here, or click to browse';
-                    document.getElementById('dropzoneSub').textContent = 'Supports UTF-8, ASCII, and custom column encodings';
-                }
+        window.retryScene = async (sceneId) => {
+            try {
+                await API.post(`/api/generation/scenes/${sceneId}/retry`, {});
+                Toast.success('Scene requeued.');
+                loadProject();
+            } catch (err) { Toast.error(err.message); }
+        };
 
-                if (!scenes || scenes.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No scenes imported. Upload a CSV file or click "Load Sample CSV" above.</td></tr>';
-                    return;
-                }
+        window.skipScene = async (sceneId) => {
+            try {
+                await API.post(`/api/generation/scenes/${sceneId}/skip`, {});
+                Toast.info('Scene skipped.');
+                loadProject();
+            } catch (err) { Toast.error(err.message); }
+        };
 
-                tbody.innerHTML = scenes.map((s, idx) => `
-                    <tr>
-                        <td class="font-mono">${s.scene_number || (idx + 1)}</td>
-                        <td class="truncate" style="max-width:250px;" title="${s.visual_prompt}">${s.visual_prompt || '—'}</td>
-                        <td class="truncate" style="max-width:250px;" title="${s.voiceover_script}">${s.voiceover_script || '—'}</td>
-                        <td>${s.aspect_ratio || '16:9'}</td>
-                        <td><span class="badge badge-secondary">${s.media_type || 'image'}</span></td>
-                        <td><span class="badge ${s.overall_status === 'COMPLETED' ? 'badge-success' : s.overall_status === 'FAILED' ? 'badge-danger' : 'badge-secondary'}">${s.overall_status || 'PENDING'}</span></td>
-                    </tr>
-                `).join('');
-            }
-
-            // CSV Dropzone Events
+        // ----------------------------------------------------- CSV upload
+        function bindUpload() {
             const dropzone = document.getElementById('dropzone');
-            const csvInput = document.getElementById('csvFileInput');
+            const input = document.getElementById('csvFileInput');
 
-            dropzone.onclick = () => csvInput.click();
+            dropzone.onclick = () => input.click();
             dropzone.ondragover = (e) => { e.preventDefault(); dropzone.classList.add('dragover'); };
             dropzone.ondragleave = () => dropzone.classList.remove('dragover');
             dropzone.ondrop = (e) => {
                 e.preventDefault();
                 dropzone.classList.remove('dragover');
-                if (e.dataTransfer.files.length) handleCsvUpload(e.dataTransfer.files[0]);
+                if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]);
             };
+            input.onchange = () => { if (input.files.length) handleUpload(input.files[0]); };
+        }
 
-            csvInput.onchange = () => {
-                if (csvInput.files.length) handleCsvUpload(csvInput.files[0]);
-            };
+        async function handleUpload(file) {
+            const form = new FormData();
+            form.append('file', file);
 
-            async function handleCsvUpload(file) {
-                const formData = new FormData();
-                formData.append('file', file);
-
-                try {
-                    Toast.info(`Analyzing ${file.name}...`);
-                    const result = await API.post('/api/upload/csv', formData);
-                    lastAnalysisResult = result;
-
-                    // Automatically import valid scenes into Supabase project workspace
-                    if (result.valid_rows && result.valid_rows.length > 0) {
-                        await API.post(`/api/projects/${currentProjectId}/scenes`, {
-                            scenes: result.valid_rows
-                        });
-
-                        Toast.success(`Successfully imported ${result.valid_count} scenes from ${file.name}!`);
-                        await loadProjectDetails();
-                    }
-
-                    // Render Analysis Panel
-                    const panel = document.getElementById('csvAnalysisPanel');
-                    panel.classList.remove('hidden');
-                    document.getElementById('csvAnalysisFileSub').textContent = `File: ${result.filename} | ${result.total_rows} Rows | ${result.columns_count} Columns`;
-
-                    document.getElementById('statFileSize').textContent = `${(result.file_size_bytes / 1024).toFixed(1)} KB`;
-                    document.getElementById('statTotalRows').textContent = result.total_rows;
-                    document.getElementById('statTotalCols').textContent = result.columns_count;
-                    document.getElementById('statEncoding').textContent = `${result.encoding} (${result.delimiter})`;
-
-                    // Media Badges
-                    const badgesEl = document.getElementById('detectedRequirementsBadges');
-                    const reqs = result.detected_media_requirements || {};
-                    badgesEl.innerHTML = `
-                        ${reqs.has_images ? '<span class="badge badge-success">🖼️ Image Prompts</span>' : ''}
-                        ${reqs.has_voiceovers ? '<span class="badge badge-warning">🎙️ Voiceovers</span>' : ''}
-                        ${reqs.has_videos ? '<span class="badge badge-danger">🎬 Videos</span>' : ''}
-                        ${result.has_master_prompt ? '<span class="badge badge-secondary">✨ Master Prompt</span>' : ''}
-                    `;
-
-                    // Mapping Table
-                    const mappingTbody = document.getElementById('columnMappingTableBody');
-                    mappingTbody.innerHTML = result.detected_columns.map(col => `
-                        <tr>
-                            <td><strong>${col.original_name}</strong></td>
-                            <td><span class="badge ${col.detected_meaning !== 'custom_metadata' ? 'badge-success' : 'badge-secondary'}">${col.detected_meaning}</span></td>
-                            <td><span class="font-mono text-muted">${col.confidence}%</span></td>
-                            <td>
-                                <select class="form-select column-override-select" data-original="${col.original_name}" style="padding:0.4rem; font-size:0.85rem;">
-                                    <option value="visual_prompt" ${col.detected_meaning === 'visual_prompt' ? 'selected' : ''}>Visual Prompt (visual_prompt)</option>
-                                    <option value="voiceover_script" ${col.detected_meaning === 'voiceover_script' ? 'selected' : ''}>Voiceover Script (voiceover_script)</option>
-                                    <option value="master_prompt" ${col.detected_meaning === 'master_prompt' ? 'selected' : ''}>Master Prompt (master_prompt)</option>
-                                    <option value="aspect_ratio" ${col.detected_meaning === 'aspect_ratio' ? 'selected' : ''}>Aspect Ratio (aspect_ratio)</option>
-                                    <option value="duration" ${col.detected_meaning === 'duration' ? 'selected' : ''}>Duration (duration)</option>
-                                    <option value="style" ${col.detected_meaning === 'style' ? 'selected' : ''}>Style (style)</option>
-                                    <option value="tone" ${col.detected_meaning === 'tone' ? 'selected' : ''}>Tone (tone)</option>
-                                    <option value="voice_name" ${col.detected_meaning === 'voice_name' ? 'selected' : ''}>Voice Name (voice_name)</option>
-                                    <option value="negative_prompt" ${col.detected_meaning === 'negative_prompt' ? 'selected' : ''}>Negative Prompt (negative_prompt)</option>
-                                    <option value="filename" ${col.detected_meaning === 'filename' ? 'selected' : ''}>Filename (filename)</option>
-                                    <option value="media_type" ${col.detected_meaning === 'media_type' ? 'selected' : ''}>Media Type (media_type)</option>
-                                    <option value="custom_metadata" ${col.detected_meaning === 'custom_metadata' ? 'selected' : ''}>Custom Metadata (custom_metadata)</option>
-                                    <option value="ignore">Ignore Column</option>
-                                </select>
-                            </td>
-                        </tr>
-                    `).join('');
-
-                } catch(e) {
-                    Toast.error(`CSV Upload Failed: ${e.message}`);
-                }
+            Toast.info(`Analyzing ${file.name}…`);
+            try {
+                analysis = await API.post(`/api/upload/csv?project_id=${currentProjectId}`, form);
+                previewSearch = '';
+                document.getElementById('previewSearch').value = '';
+                renderAnalysis();
+                loadPreview();
+                Toast.success(`Analyzed ${analysis.total_rows} rows — review the mapping, then import.`);
+            } catch (err) {
+                Toast.error(`CSV upload failed: ${err.message}`);
             }
+        }
 
+        function renderAnalysis() {
+            const panel = document.getElementById('csvAnalysisPanel');
+            panel.classList.remove('hidden');
+
+            document.getElementById('csvAnalysisFileSub').textContent =
+                `${analysis.filename} · ${analysis.total_rows} rows · ${analysis.columns_count} columns`;
+            document.getElementById('statFileSize').textContent = Fmt.bytes(analysis.file_size_bytes);
+            document.getElementById('statTotalRows').textContent = `${analysis.valid_count} / ${analysis.invalid_count}`;
+            document.getElementById('statTotalCols').textContent = analysis.columns_count;
+            document.getElementById('statEncoding').textContent =
+                `${analysis.encoding} (${analysis.delimiter === '\t' ? 'TAB' : analysis.delimiter})`;
+
+            const requirements = analysis.detected_media_requirements || {};
+            document.getElementById('detectedRequirementsBadges').innerHTML = [
+                requirements.has_images ? '<span class="badge badge-success">🖼️ Images</span>' : '',
+                requirements.has_voiceovers ? '<span class="badge badge-warning">🎙️ Voiceovers</span>' : '',
+                requirements.has_videos ? '<span class="badge badge-danger">🎬 Videos</span>' : '',
+                analysis.has_master_prompt ? '<span class="badge badge-secondary">✨ Master prompt</span>' : '',
+            ].join('');
+
+            const options = analysis.available_mappings || [];
+            document.getElementById('columnMappingTableBody').innerHTML = analysis.detected_columns.map(col => `
+                <tr>
+                    <td><strong>${Fmt.esc(col.original_name)}</strong></td>
+                    <td>
+                        <span class="badge ${col.detected_meaning === 'custom_metadata' ? 'badge-secondary' : 'badge-success'}">
+                            ${Fmt.esc(col.detected_meaning)}
+                        </span>
+                    </td>
+                    <td class="font-mono ${col.is_ambiguous ? 'text-danger' : 'text-muted'}">
+                        ${col.confidence}%${col.is_ambiguous ? ' ⚠' : ''}
+                    </td>
+                    <td class="text-muted">${Fmt.esc(col.data_type)}</td>
+                    <td class="text-muted">${col.non_empty_count}</td>
+                    <td class="truncate text-muted" style="max-width:180px;" title="${Fmt.esc(col.example_value)}">${Fmt.esc(Fmt.truncate(col.example_value, 40))}</td>
+                    <td>
+                        <select class="form-control column-override" data-column="${Fmt.esc(col.original_name)}" style="padding:0.35rem; font-size:0.8rem;">
+                            ${options.map(o => `<option value="${o}" ${o === col.detected_meaning ? 'selected' : ''}>${o}</option>`).join('')}
+                        </select>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ----------------------------------------------------- preview (§22)
+        function bindPreview() {
+            let debounce;
+            document.getElementById('previewSearch').oninput = (e) => {
+                clearTimeout(debounce);
+                debounce = setTimeout(() => {
+                    previewSearch = e.target.value.trim();
+                    loadPreview();
+                }, 300);
+            };
+
+            // Expand a truncated cell in place rather than hiding data behind a tooltip.
+            document.getElementById('previewBody').addEventListener('click', (event) => {
+                const cell = event.target.closest('td.preview-cell');
+                if (cell) cell.classList.toggle('expanded');
+            });
+        }
+
+        async function loadPreview() {
+            if (!analysis?.csv_file_id) return;
+
+            const head = document.getElementById('previewHead');
+            const body = document.getElementById('previewBody');
+            const info = document.getElementById('previewPageInfo');
+            info.textContent = 'Loading rows…';
+
+            try {
+                // Whole file in one response — the table scrolls, it does not paginate.
+                const data = await API.get(
+                    `/api/upload/csv/${analysis.csv_file_id}/rows` + API.qs({ search: previewSearch }),
+                    { timeout: 60000 }
+                );
+
+                head.innerHTML =
+                    `<tr><th style="width:56px;">#</th>${data.headers.map(h => `<th>${Fmt.esc(h)}</th>`).join('')}</tr>`;
+
+                if (!data.rows.length) {
+                    body.innerHTML = `<tr><td colspan="${(data.headers.length || 1) + 1}" class="text-muted">No rows match this search.</td></tr>`;
+                } else {
+                    body.innerHTML = data.rows.map((row, index) => `
+                        <tr>
+                            <td class="row-number">${index + 1}</td>
+                            ${data.headers.map(h => {
+                                const value = row[h] ?? '';
+                                return `<td class="preview-cell" title="Click to expand">${Fmt.esc(value)}</td>`;
+                            }).join('')}
+                        </tr>`).join('');
+                }
+
+                info.textContent =
+                    `${data.returned} of ${data.total_all} rows` +
+                    (previewSearch ? ` (filtered from ${data.total_all})` : '') +
+                    (data.truncated ? ` · showing the first ${data.returned} — refine the search to see more` : '');
+            } catch (err) {
+                info.textContent = 'Preview unavailable';
+                body.innerHTML = `<tr><td class="text-danger">Preview failed: ${Fmt.esc(err.message)}</td></tr>`;
+            }
+        }
+
+        // ----------------------------------------------------- mapping + import
+        function bindMapping() {
             document.getElementById('btnCancelMapping').onclick = () => {
                 document.getElementById('csvAnalysisPanel').classList.add('hidden');
             };
 
             document.getElementById('btnConfirmImport').onclick = async () => {
-                if (!lastAnalysisResult || (!lastAnalysisResult.raw_rows && !lastAnalysisResult.valid_rows)) return;
+                if (!analysis) return;
 
-                // Collect manual column overrides
-                const overrides = {};
-                document.querySelectorAll('.column-override-select').forEach(sel => {
-                    const orig = sel.dataset.original;
-                    overrides[orig] = sel.value;
-                });
+                const button = document.getElementById('btnConfirmImport');
+                button.disabled = true;
+                button.textContent = 'Importing…';
 
-                const rowsToMap = lastAnalysisResult.raw_rows || lastAnalysisResult.valid_rows;
+                try {
+                    const mapping = {};
+                    document.querySelectorAll('.column-override').forEach(select => {
+                        mapping[select.dataset.column] = select.value;
+                    });
 
-                // Re-normalize rows according to overrides
-                const normalizedScenes = rowsToMap.map((row, idx) => {
-                    const scene = { id: String(idx + 1), custom_metadata: {} };
-                    Object.entries(row).forEach(([origKey, val]) => {
-                        const valStr = typeof val === 'string' ? val.trim() : String(val || '');
-                        const targetField = overrides[origKey] || 'custom_metadata';
-                        
-                        if (targetField === 'ignore') return;
-                        if (targetField === 'custom_metadata') {
-                            scene.custom_metadata[origKey] = valStr;
-                        } else {
-                            scene[targetField] = valStr;
+                    // Re-normalize on the server, then replace the scene set so a
+                    // re-import never duplicates scenes.
+                    let scenes = analysis.valid_rows;
+                    if (analysis.csv_file_id) {
+                        const remapped = await API.post(`/api/upload/csv/${analysis.csv_file_id}/mapping`, { mapping });
+                        scenes = remapped.valid_rows;
+                        if (remapped.invalid_count) {
+                            Toast.warning(`${remapped.invalid_count} row(s) had no generatable content and were skipped.`);
                         }
-                    });
-
-                    if (!scene.aspect_ratio) scene.aspect_ratio = '16:9';
-                    if (!scene.media_type) scene.media_type = 'image';
-                    return scene;
-                });
-
-                try {
-                    Toast.info("Re-applying custom column mappings...");
-                    await API.post(`/api/projects/${currentProjectId}/scenes`, {
-                        scenes: normalizedScenes
-                    });
-
-                    Toast.success(`Successfully updated ${normalizedScenes.length} scenes with new mapping!`);
-                    document.getElementById('csvAnalysisPanel').classList.add('hidden');
-                    await loadProjectDetails();
-                } catch(e) {
-                    Toast.error(`Mapping update failed: ${e.message}`);
-                }
-            };
-
-            // Sample CSV Loader
-            document.getElementById('btnLoadSample').onclick = async () => {
-                const sampleScenes = [
-                    {
-                        id: "1",
-                        visual_prompt: "A serene futuristic cyberpunk city at sunset, neon reflections on wet asphalt with glowing holographic billboards",
-                        voiceover_script: "Welcome to the city of tomorrow, where digital dreams illuminate the night sky.",
-                        filename: "scene_001",
-                        aspect_ratio: "16:9",
-                        style: "Cyberpunk Cinematic",
-                        tone: "Inspirational"
-                    },
-                    {
-                        id: "2",
-                        visual_prompt: "Cinematic portrait of an ancient warrior standing on a mountain peak during a golden sunrise",
-                        voiceover_script: "Across the peaks of history, victory belonged to those who dared to dream.",
-                        filename: "scene_002",
-                        aspect_ratio: "16:9",
-                        style: "Historical Epic",
-                        tone: "Heroic"
-                    },
-                    {
-                        id: "3",
-                        visual_prompt: "Aerial drone shot of lush tropical rainforest with mist rising over emerald canopy",
-                        voiceover_script: "Deep within the untouched wilderness lies an ecosystem millions of years in the making.",
-                        filename: "scene_003",
-                        aspect_ratio: "16:9",
-                        style: "Nature Documentary",
-                        tone: "Calm"
                     }
-                ];
 
-                try {
-                    Toast.info("Loading 3 sample CSV scenes into project workspace...");
-                    await API.post(`/api/projects/${currentProjectId}/scenes`, {
-                        scenes: sampleScenes
+                    if (!scenes.length) {
+                        Toast.error('This mapping produces no generatable scenes. Check the Visual Prompt / Voiceover columns.');
+                        return;
+                    }
+
+                    const result = await API.post(`/api/projects/${currentProjectId}/scenes`, {
+                        scenes,
+                        replace: true,
+                        csv_file_id: analysis.csv_file_id || null,
                     });
 
-                    Toast.success("Sample CSV scenes loaded successfully!");
-                    await loadProjectDetails();
-                } catch(e) {
-                    Toast.error(`Failed to load sample CSV: ${e.message}`);
+                    Toast.success(`Imported ${result.imported_count} scenes.`);
+                    document.getElementById('csvAnalysisPanel').classList.add('hidden');
+                    await loadProject();
+                } catch (err) {
+                    Toast.error(`Import failed: ${err.message}`);
+                } finally {
+                    button.disabled = false;
+                    button.textContent = '✅ Apply Mapping & Import Scenes';
                 }
             };
+        }
 
-            document.getElementById('btnStartGeneration').onclick = async () => {
-                if (currentScenes.length === 0) {
-                    Toast.error("Cannot start generation. Please upload a CSV or load sample scenes first.");
+        // ----------------------------------------------------- sample + start
+        async function loadSample() {
+            const sample = [
+                {
+                    scene_number: '1',
+                    visual_prompt: 'A serene futuristic cyberpunk city at sunset, neon reflections on wet asphalt with glowing holographic billboards',
+                    voiceover_script: 'Welcome to the city of tomorrow, where digital dreams illuminate the night sky.',
+                    filename: 'scene_001', aspect_ratio: '16:9', style: 'Cyberpunk cinematic', tone: 'Inspirational',
+                    media_type: 'image_voice',
+                },
+                {
+                    scene_number: '2',
+                    visual_prompt: 'Cinematic portrait of an ancient warrior standing on a mountain peak during a golden sunrise',
+                    voiceover_script: 'Across the peaks of history, victory belonged to those who dared to dream.',
+                    filename: 'scene_002', aspect_ratio: '16:9', style: 'Historical epic', tone: 'Heroic',
+                    media_type: 'image_voice',
+                },
+                {
+                    scene_number: '3',
+                    visual_prompt: 'Aerial drone shot of lush tropical rainforest with mist rising over an emerald canopy',
+                    voiceover_script: 'Deep within the untouched wilderness lies an ecosystem millions of years in the making.',
+                    filename: 'scene_003', aspect_ratio: '16:9', style: 'Nature documentary', tone: 'Calm',
+                    media_type: 'image_voice',
+                },
+            ];
+
+            try {
+                const result = await API.post(`/api/projects/${currentProjectId}/scenes`, { scenes: sample, replace: true });
+                Toast.success(`Loaded ${result.imported_count} sample scenes.`);
+                await loadProject();
+            } catch (err) {
+                Toast.error(`Failed to load sample: ${err.message}`);
+            }
+        }
+
+        async function startGeneration() {
+            if (!currentScenes.length) {
+                Toast.error('Import scenes before starting generation.');
+                return;
+            }
+
+            const button = document.getElementById('btnStartGeneration');
+            button.disabled = true;
+            button.textContent = 'Starting…';
+            try {
+                const result = await API.post('/api/generation/start', { project_id: String(currentProjectId) });
+                if (result.task_count === 0) {
+                    Toast.info(result.message || 'Nothing left to generate.');
                     return;
                 }
-
-                try {
-                    await API.post('/api/generation/start', { project_id: String(currentProjectId) });
-                    Toast.success('Batch generation job started!');
-                    window.location.href = `/generation-progress.html?project_id=${currentProjectId}`;
-                } catch(e) {
-                    Toast.error(`Start generation failed: ${e.message}`);
-                }
-            };
-
-            loadProjectDetails();
-        });
+                Toast.success(`Queued ${result.task_count} generation tasks.`);
+                window.location.href = `/generation-progress.html?project_id=${currentProjectId}`;
+            } catch (err) {
+                Toast.error(`Start failed: ${err.message}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = '⚡ Start Batch Generation';
+            }
+        }
     </script>
 </body>
 </html>

@@ -3,201 +3,322 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asset Library - AI Content Studio</title>
+    <title>Asset Browser - AI ContentStudio</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/env.js" defer></script>
+    <script src="/config.js" defer></script>
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
     <div class="app-layout">
-        <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="sidebar-brand">
-                AI Content <span>Studio</span>
-            </div>
+            <div class="sidebar-brand">AI Content <span>Studio</span></div>
             <nav class="sidebar-nav">
-                <a href="/dashboard.html" class="nav-item">
-                    <i>📊</i> Dashboard
-                </a>
-                <a href="/projects.html" class="nav-item">
-                    <i>📁</i> Projects
-                </a>
-                <a href="/generation-progress.html" class="nav-item">
-                    <i>⚡</i> Batch Generation
-                </a>
-                <a href="/assets.html" class="nav-item active">
-                    <i>🖼️</i> Asset Browser
-                </a>
-                <a href="/export.html" class="nav-item">
-                    <i>📦</i> Selective Export
-                </a>
+                <a href="/dashboard.html" class="nav-item"><i>📊</i> Dashboard</a>
+                <a href="/projects.html" class="nav-item"><i>📁</i> Projects</a>
+                <a href="/generation-progress.html" class="nav-item"><i>⚡</i> Batch Generation</a>
+                <a href="/assets.html" class="nav-item active"><i>🖼️</i> Asset Browser</a>
+                <a href="/export.html" class="nav-item"><i>📦</i> Selective Export</a>
             </nav>
             <div class="sidebar-footer">
-                <a href="/settings.html" class="nav-item">
-                    <i>⚙️</i> Settings
-                </a>
-                <a href="#" id="logoutBtn" class="nav-item">
-                    <i>🚪</i> Logout
-                </a>
+                <a href="/settings.html" class="nav-item"><i>⚙️</i> Settings</a>
+                <a href="#" id="logoutBtn" class="nav-item"><i>🚪</i> Logout</a>
             </div>
         </aside>
 
-        <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
-                <div class="page-title">Asset Library Browser</div>
-                <div class="user-menu">
-                    <span id="userEmail">Loading...</span>
-                </div>
+                <div class="page-title">Asset Browser</div>
+                <div class="user-menu"><span id="userEmail">Loading…</span></div>
             </header>
 
             <div class="page-container">
-                <!-- Filters Bar -->
-                <div class="glass-panel mb-4" style="padding: 1.25rem;">
-                    <div class="flex justify-between items-center">
-                        <div class="flex gap-md items-center">
-                            <label><strong>Project:</strong></label>
-                            <select id="projectSelect" class="form-select" style="width: auto; min-width: 200px;">
-                                <option value="">Loading projects...</option>
-                            </select>
-                        </div>
-                        <div class="flex gap-2">
-                            <button class="btn btn-secondary btn-sm filter-btn active" data-filter="all">All Assets</button>
-                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="image">Images</button>
-                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="audio">Voiceovers</button>
-                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="video">Videos</button>
-                        </div>
+                <div class="stats-grid mb-4">
+                    <div class="stat-card blue">
+                        <div class="stat-label">🖼️ Images</div>
+                        <div class="stat-value blue" id="sumImages">0</div>
+                    </div>
+                    <div class="stat-card purple">
+                        <div class="stat-label">🎙️ Voiceovers</div>
+                        <div class="stat-value purple" id="sumVoiceovers">0</div>
+                    </div>
+                    <div class="stat-card green">
+                        <div class="stat-label">🎬 Videos</div>
+                        <div class="stat-value green" id="sumVideos">0</div>
+                    </div>
+                    <div class="stat-card blue">
+                        <div class="stat-label">💾 Storage Used</div>
+                        <div class="stat-value blue" id="sumBytes">0</div>
                     </div>
                 </div>
 
-                <!-- Asset Cards Grid -->
-                <div id="assetsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;">
-                    <div class="text-muted">Select a project above to browse assets.</div>
+                <div class="glass-panel mb-4" style="padding: 1.25rem;">
+                    <div class="flex justify-between items-center gap-2" style="flex-wrap: wrap;">
+                        <div class="flex items-center gap-2">
+                            <label><strong>Project:</strong></label>
+                            <select id="projectSelect" class="form-control" style="width:auto; min-width:200px;">
+                                <option value="">All projects</option>
+                            </select>
+                            <input type="search" id="assetSearch" class="form-control" placeholder="Search filename or prompt…" style="width: 240px;">
+                            <select id="sortSelect" class="form-control" style="width:auto;">
+                                <option value="created_at:desc">Newest first</option>
+                                <option value="created_at:asc">Oldest first</option>
+                                <option value="filename:asc">Filename A–Z</option>
+                                <option value="size:desc">Largest first</option>
+                                <option value="scene_id:asc">Scene order</option>
+                            </select>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-secondary btn-sm filter-btn active" data-filter="all">All</button>
+                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="image">Images</button>
+                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="voiceover">Voiceovers</button>
+                            <button class="btn btn-secondary btn-sm filter-btn" data-filter="video">Videos</button>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-center mt-3" style="border-top:1px solid var(--border-glass); padding-top:0.75rem;">
+                        <div class="flex gap-2 items-center">
+                            <button class="btn btn-ghost btn-sm" id="btnSelectPage">Select page</button>
+                            <button class="btn btn-ghost btn-sm" id="btnClearSelection">Clear</button>
+                            <span class="text-muted" style="font-size:0.85rem;"><strong id="selectionCount">0</strong> selected</span>
+                        </div>
+                        <div class="flex gap-2 items-center">
+                            <button class="btn btn-primary btn-sm" id="btnExportSelected">📦 Export Selected</button>
+                            <button class="btn btn-secondary btn-sm" id="pagePrev">‹</button>
+                            <span class="text-muted" id="pageInfo" style="font-size:0.85rem;">—</span>
+                            <button class="btn btn-secondary btn-sm" id="pageNext">›</button>
+                        </div>
+                    </div>
+                    <div id="exportResult" class="mt-3 hidden"></div>
                 </div>
 
+                <div id="assetsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.25rem;">
+                    <div class="text-muted">Loading assets…</div>
+                </div>
             </div>
         </main>
     </div>
 
     <script>
-        let currentFilter = 'all';
-        let currentProjectScenes = [];
+        const state = { project: '', type: 'all', search: '', sort: 'created_at', order: 'desc', page: 1, pageSize: 24 };
+        const selected = new Map();     // asset id -> asset
+        let pageAssets = [];
 
         document.addEventListener('DOMContentLoaded', async () => {
-            const user = await Auth.requireAuth();
+            const user = await Shell.init();
             if (!user) return;
 
-            document.getElementById('userEmail').textContent = user.email;
+            const preset = new URLSearchParams(window.location.search).get('project_id');
+            if (preset) state.project = preset;
 
-            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                await Auth.signOut();
-                window.location.href = '/login.html';
-            });
+            await loadProjects();
+            bindControls();
+            await Promise.all([loadSummary(), loadAssets()]);
+        });
 
-            const projectSelect = document.getElementById('projectSelect');
-
-            async function loadProjects() {
-                try {
-                    const projects = await API.get('/api/projects');
-                    if (!projects || projects.length === 0) {
-                        projectSelect.innerHTML = '<option value="">No projects found</option>';
-                        return;
-                    }
-                    projectSelect.innerHTML = projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-                    loadAssetsForProject(projects[0].id);
-                } catch(e) {
-                    Toast.error("Failed to load projects");
-                }
+        async function loadProjects() {
+            const select = document.getElementById('projectSelect');
+            try {
+                const projects = await API.get('/api/projects');
+                select.innerHTML = '<option value="">All projects</option>' + projects.map(p =>
+                    `<option value="${p.id}" ${String(p.id) === String(state.project) ? 'selected' : ''}>${Fmt.esc(p.name)}</option>`
+                ).join('');
+            } catch (err) {
+                Toast.error(`Could not load projects: ${err.message}`);
             }
+        }
 
-            projectSelect.onchange = () => {
-                if (projectSelect.value) loadAssetsForProject(projectSelect.value);
+        function bindControls() {
+            document.getElementById('projectSelect').onchange = (e) => {
+                state.project = e.target.value; state.page = 1;
+                loadSummary(); loadAssets();
             };
 
-            async function loadAssetsForProject(projectId) {
-                try {
-                    const project = await API.get(`/api/projects/${projectId}`);
-                    currentProjectScenes = project.scenes || [];
-                    renderAssetsGrid();
-                } catch(e) {
-                    Toast.error("Failed to load project assets");
-                }
-            }
+            let debounce;
+            document.getElementById('assetSearch').oninput = (e) => {
+                clearTimeout(debounce);
+                debounce = setTimeout(() => { state.search = e.target.value.trim(); state.page = 1; loadAssets(); }, 300);
+            };
 
-            function renderAssetsGrid() {
-                const grid = document.getElementById('assetsGrid');
-                let items = [];
+            document.getElementById('sortSelect').onchange = (e) => {
+                const [sort, order] = e.target.value.split(':');
+                state.sort = sort; state.order = order; state.page = 1;
+                loadAssets();
+            };
 
-                currentProjectScenes.forEach(s => {
-                    if (s.visual_path && (currentFilter === 'all' || currentFilter === 'image')) {
-                        items.push({ type: 'image', path: s.visual_path, scene_number: s.scene_number, prompt: s.visual_prompt });
-                    }
-                    if (s.audio_path && (currentFilter === 'all' || currentFilter === 'audio')) {
-                        items.push({ type: 'audio', path: s.audio_path, scene_number: s.scene_number, script: s.voiceover_script });
-                    }
-                    if (s.merged_path && (currentFilter === 'all' || currentFilter === 'video')) {
-                        items.push({ type: 'video', path: s.merged_path, scene_number: s.scene_number, prompt: s.visual_prompt });
-                    }
-                });
-
-                if (items.length === 0) {
-                    grid.innerHTML = '<div class="glass-card text-muted" style="padding:2rem; grid-column: 1 / -1;">No assets generated for this filter selection yet.</div>';
-                    return;
-                }
-
-                grid.innerHTML = items.map(item => {
-                    if (item.type === 'image') {
-                        return `
-                            <div class="glass-card" style="padding: 1rem;">
-                                <div style="aspect-ratio: 16/9; background:#000; overflow:hidden; border-radius:8px; margin-bottom:0.75rem;">
-                                    <img src="${item.path}" style="width:100%; height:100%; object-fit:cover;">
-                                </div>
-                                <div>
-                                    <span class="badge badge-secondary">Scene ${item.scene_number} — PNG</span>
-                                    <p class="text-muted mt-1 truncate" style="font-size:0.8rem;" title="${item.prompt}">${item.prompt}</p>
-                                </div>
-                            </div>
-                        `;
-                    } else if (item.type === 'audio') {
-                        return `
-                            <div class="glass-card" style="padding: 1.25rem;">
-                                <span class="badge badge-success mb-2">Scene ${item.scene_number} — MP3 Voiceover</span>
-                                <audio controls style="width:100%; margin: 0.5rem 0;">
-                                    <source src="${item.path}" type="audio/mp3">
-                                </audio>
-                                <p class="text-muted truncate" style="font-size:0.8rem;" title="${item.script}">${item.script || 'Voiceover Audio'}</p>
-                            </div>
-                        `;
-                    } else if (item.type === 'video') {
-                        return `
-                            <div class="glass-card" style="padding: 1rem;">
-                                <div style="aspect-ratio: 16/9; background:#000; overflow:hidden; border-radius:8px; margin-bottom:0.75rem;">
-                                    <video controls style="width:100%; height:100%; object-fit:cover;">
-                                        <source src="${item.path}" type="video/mp4">
-                                    </video>
-                                </div>
-                                <div>
-                                    <span class="badge badge-warning">Scene ${item.scene_number} — Merged MP4</span>
-                                </div>
-                            </div>
-                        `;
-                    }
-                }).join('');
-            }
-
-            document.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.onclick = () => {
+            document.querySelectorAll('.filter-btn').forEach(button => {
+                button.onclick = () => {
                     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    currentFilter = btn.dataset.filter;
-                    renderAssetsGrid();
+                    button.classList.add('active');
+                    state.type = button.dataset.filter;
+                    state.page = 1;
+                    loadAssets();
                 };
             });
 
-            loadProjects();
-        });
+            document.getElementById('pagePrev').onclick = () => { if (state.page > 1) { state.page--; loadAssets(); } };
+            document.getElementById('pageNext').onclick = () => { state.page++; loadAssets(); };
+
+            document.getElementById('btnSelectPage').onclick = () => {
+                pageAssets.forEach(a => selected.set(a.id, a));
+                syncSelectionUI();
+            };
+            document.getElementById('btnClearSelection').onclick = () => {
+                selected.clear();
+                syncSelectionUI();
+            };
+            document.getElementById('btnExportSelected').onclick = exportSelected;
+        }
+
+        async function loadSummary() {
+            try {
+                const summary = await API.get('/api/assets/summary' + API.qs({ project_id: state.project }));
+                document.getElementById('sumImages').textContent = summary.images;
+                document.getElementById('sumVoiceovers').textContent = summary.voiceovers;
+                document.getElementById('sumVideos').textContent = summary.videos;
+                document.getElementById('sumBytes').textContent = Fmt.bytes(summary.total_bytes);
+            } catch (err) {
+                console.warn('summary failed', err);
+            }
+        }
+
+        async function loadAssets() {
+            const grid = document.getElementById('assetsGrid');
+            try {
+                const data = await API.get('/api/assets' + API.qs({
+                    project_id: state.project,
+                    asset_type: state.type === 'all' ? '' : state.type,
+                    search: state.search,
+                    sort_by: state.sort,
+                    order: state.order,
+                    page: state.page,
+                    page_size: state.pageSize,
+                }));
+
+                if (state.page > data.total_pages) { state.page = data.total_pages; return loadAssets(); }
+
+                pageAssets = data.assets;
+                document.getElementById('pageInfo').textContent = `Page ${data.page} / ${data.total_pages} · ${data.total} assets`;
+
+                if (!data.assets.length) {
+                    grid.innerHTML = '<div class="glass-card text-muted" style="padding:2rem; grid-column: 1 / -1;">No assets match this selection. Generated assets appear here once tasks complete.</div>';
+                    return;
+                }
+
+                grid.innerHTML = data.assets.map(renderCard).join('');
+            } catch (err) {
+                grid.innerHTML = `<div class="glass-card text-danger" style="padding:2rem; grid-column: 1 / -1;">${Fmt.esc(err.message)}</div>`;
+            }
+        }
+
+        function renderCard(asset) {
+            const isSelected = selected.has(asset.id);
+            const preview =
+                asset.asset_type === 'voiceover'
+                    ? `<audio controls preload="none" style="width:100%; margin:0.5rem 0;"><source src="${Fmt.esc(Fmt.media(asset.storage_path))}"></audio>`
+                    : asset.asset_type === 'image'
+                        ? `<div style="aspect-ratio:16/9; background:#000; border-radius:8px; overflow:hidden;">
+                               <img src="${Fmt.esc(Fmt.media(asset.storage_path))}" loading="lazy" style="width:100%; height:100%; object-fit:cover;">
+                           </div>`
+                        : `<div style="aspect-ratio:16/9; background:#000; border-radius:8px; overflow:hidden;">
+                               <video controls preload="metadata" style="width:100%; height:100%; object-fit:cover;"><source src="${Fmt.esc(Fmt.media(asset.storage_path))}" type="video/mp4"></video>
+                           </div>`;
+
+            return `
+                <div class="glass-card" data-asset-card="${asset.id}" style="padding:1rem; ${isSelected ? 'outline:2px solid var(--primary);' : ''}">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="flex items-center gap-sm" style="font-size:0.8rem;">
+                            <input type="checkbox" data-asset-check="${asset.id}" ${isSelected ? 'checked' : ''} onchange="toggleAsset(${asset.id})">
+                            Scene ${Fmt.esc(asset.scene_number || asset.scene_id)}
+                        </label>
+                        <span class="badge ${asset.verified ? 'badge-success' : 'badge-secondary'}">
+                            ${asset.verified ? '✓ ' : ''}${Fmt.esc(asset.asset_type)}
+                        </span>
+                    </div>
+                    ${preview}
+                    <div class="mt-2">
+                        <div class="truncate" style="font-size:0.85rem;" title="${Fmt.esc(asset.filename)}">${Fmt.esc(asset.filename)}</div>
+                        <div class="text-muted" style="font-size:0.75rem;">${Fmt.bytes(asset.size)} · ${Fmt.date(asset.created_at)}</div>
+                        ${asset.prompt ? `<div class="text-muted truncate mt-1" style="font-size:0.75rem;" title="${Fmt.esc(asset.prompt)}">${Fmt.esc(Fmt.truncate(asset.prompt, 70))}</div>` : ''}
+                    </div>
+                    <div class="flex gap-2 mt-2">
+                        <a class="btn btn-secondary btn-sm" href="${Fmt.media(`/api/assets/${asset.id}/download`)}">⬇ Download</a>
+                        <button class="btn btn-ghost btn-sm" onclick="deleteAsset(${asset.id})">🗑</button>
+                    </div>
+                </div>`;
+        }
+
+        window.toggleAsset = (id) => {
+            if (selected.has(id)) selected.delete(id);
+            else {
+                const asset = pageAssets.find(a => a.id === id);
+                if (asset) selected.set(id, asset);
+            }
+            // Update in place — refetching the page here would cost a request
+            // per click and could reshuffle cards mid-selection.
+            syncSelectionUI();
+        };
+
+        function syncSelectionUI() {
+            pageAssets.forEach(asset => {
+                const isSelected = selected.has(asset.id);
+                const card = document.querySelector(`[data-asset-card="${asset.id}"]`);
+                const check = document.querySelector(`[data-asset-check="${asset.id}"]`);
+                if (card) card.style.outline = isSelected ? '2px solid var(--primary)' : '';
+                if (check) check.checked = isSelected;
+            });
+            renderSelection();
+        }
+
+        window.deleteAsset = async (id) => {
+            if (!confirm('Delete this asset file permanently?')) return;
+            try {
+                await API.delete(`/api/assets/${id}`);
+                selected.delete(id);
+                Toast.success('Asset deleted.');
+                renderSelection();
+                loadSummary();
+                loadAssets();
+            } catch (err) { Toast.error(err.message); }
+        };
+
+        function renderSelection() {
+            document.getElementById('selectionCount').textContent = selected.size;
+        }
+
+        async function exportSelected() {
+            if (!selected.size) {
+                Toast.error('Select at least one asset to export.');
+                return;
+            }
+            const button = document.getElementById('btnExportSelected');
+            button.disabled = true;
+            button.textContent = 'Packing…';
+            try {
+                const result = await API.post('/api/export', {
+                    asset_ids: [...selected.keys()],
+                    project_id: state.project || null,
+                    organize_by: 'type',
+                }, { timeout: 120000 });
+
+                const box = document.getElementById('exportResult');
+                box.classList.remove('hidden');
+                box.innerHTML = `
+                    <div class="glass-card" style="padding:1rem;">
+                        <strong class="text-success">ZIP ready — ${result.asset_count} files</strong>
+                        <a class="btn btn-primary btn-sm mt-2" href="${Fmt.esc(Fmt.media(result.download_url))}" download>⬇️ Download archive</a>
+                    </div>`;
+                Toast.success('Export archive created.');
+            } catch (err) {
+                Toast.error(`Export failed: ${err.message}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = '📦 Export Selected';
+            }
+        }
     </script>
 </body>
 </html>

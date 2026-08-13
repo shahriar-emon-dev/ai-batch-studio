@@ -3,230 +3,291 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Selective Export - AI Content Studio</title>
+    <title>Selective Export - AI ContentStudio</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/env.js" defer></script>
+    <script src="/config.js" defer></script>
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
     <div class="app-layout">
-        <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="sidebar-brand">
-                AI Content <span>Studio</span>
-            </div>
+            <div class="sidebar-brand">AI Content <span>Studio</span></div>
             <nav class="sidebar-nav">
-                <a href="/dashboard.html" class="nav-item">
-                    <i>📊</i> Dashboard
-                </a>
-                <a href="/projects.html" class="nav-item">
-                    <i>📁</i> Projects
-                </a>
-                <a href="/generation-progress.html" class="nav-item">
-                    <i>⚡</i> Batch Generation
-                </a>
-                <a href="/assets.html" class="nav-item">
-                    <i>🖼️</i> Asset Browser
-                </a>
-                <a href="/export.html" class="nav-item active">
-                    <i>📦</i> Selective Export
-                </a>
+                <a href="/dashboard.html" class="nav-item"><i>📊</i> Dashboard</a>
+                <a href="/projects.html" class="nav-item"><i>📁</i> Projects</a>
+                <a href="/generation-progress.html" class="nav-item"><i>⚡</i> Batch Generation</a>
+                <a href="/assets.html" class="nav-item"><i>🖼️</i> Asset Browser</a>
+                <a href="/export.html" class="nav-item active"><i>📦</i> Selective Export</a>
             </nav>
             <div class="sidebar-footer">
-                <a href="/settings.html" class="nav-item">
-                    <i>⚙️</i> Settings
-                </a>
-                <a href="#" id="logoutBtn" class="nav-item">
-                    <i>🚪</i> Logout
-                </a>
+                <a href="/settings.html" class="nav-item"><i>⚙️</i> Settings</a>
+                <a href="#" id="logoutBtn" class="nav-item"><i>🚪</i> Logout</a>
             </div>
         </aside>
 
-        <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
-                <div class="page-title">Selective Asset Export Center</div>
-                <div class="user-menu">
-                    <span id="userEmail">Loading...</span>
-                </div>
+                <div class="page-title">Selective Export</div>
+                <div class="user-menu"><span id="userEmail">Loading…</span></div>
             </header>
 
-            <div class="page-container" style="max-width: 850px; margin: 0 auto;">
-                <div id="exportAlert" class="alert mb-4"></div>
-
-                <div class="glass-panel" style="padding: 2rem;">
-                    <h2>Export Project Assets as ZIP</h2>
-                    <p class="text-muted mt-1">Configure filtering parameters to generate a clean, structured ZIP archive preserving folder organization (<code>images/</code>, <code>voiceovers/</code>, <code>videos/</code>).</p>
-
-                    <form id="exportForm" class="mt-4">
-                        <div class="form-group">
-                            <label for="exportProject">Select Target Project</label>
-                            <select id="exportProject" class="form-select" required>
-                                <option value="">Loading projects...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group mt-4">
-                            <label>Status Filter</label>
-                            <div class="flex gap-md">
-                                <label><input type="radio" name="statusFilter" value="all" checked> All Scenes</label>
-                                <label><input type="radio" name="statusFilter" value="completed"> Completed Scenes Only</label>
-                                <label><input type="radio" name="statusFilter" value="failed"> Failed Scenes Only</label>
-                            </div>
-                        </div>
-
-                        <div class="form-group mt-4">
-                            <label>Include Media Folder Types</label>
-                            <div class="flex gap-md">
-                                <label><input type="checkbox" id="typeImages" value="images" checked> Images (<code>images/</code>)</label>
-                                <label><input type="checkbox" id="typeVoiceovers" value="voiceovers" checked> Voiceovers (<code>voiceovers/</code>)</label>
-                                <label><input type="checkbox" id="typeVideos" value="videos" checked> Merged Videos (<code>videos/</code>)</label>
-                            </div>
-                        </div>
-
-                        <div class="mt-4">
-                            <button type="submit" class="btn btn-primary" id="btnGenerateZip">📦 Generate ZIP Archive</button>
-                        </div>
-                    </form>
-
-                    <!-- Export Download Result Card -->
-                    <div id="exportResultCard" class="glass-card mt-4 hidden" style="padding: 1.5rem;">
-                        <h4 class="text-success">ZIP Archive Ready for Download!</h4>
-                        <p class="text-muted mt-1" id="exportCountInfo">Exported 0 scene records into structured archive.</p>
-                        <div class="mt-3">
-                            <a href="#" id="downloadZipLink" class="btn btn-primary btn-sm" download>⬇️ Download ZIP Archive</a>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- CSV Generation Report Export Card -->
-                <div class="glass-panel mt-4" style="padding: 2rem;">
-                    <h2>📄 Download Generation Report</h2>
-                    <p class="text-muted mt-1">Export a CSV file containing all scene statuses, asset paths, error messages, and timestamps for the selected project.</p>
+            <div class="page-container">
+                <div class="glass-panel mb-4" style="padding: 2rem;">
+                    <h2>📦 Export Generated Assets</h2>
+                    <p class="text-muted mt-1">Choose a whole project, individual scenes, or specific asset types. Files are packaged into folders with a metadata manifest.</p>
 
                     <div class="form-group mt-4">
-                        <label for="reportProject">Select Project</label>
-                        <select id="reportProject" class="form-select">
-                            <option value="">Loading projects...</option>
+                        <label for="exportProject">Project</label>
+                        <select id="exportProject" class="form-control">
+                            <option value="">Loading projects…</option>
                         </select>
                     </div>
 
-                    <button id="btnDownloadReportExport" class="btn btn-secondary mt-3">📄 Generate & Download Report CSV</button>
-
-                    <div id="reportResult" class="glass-card mt-4 hidden" style="padding: 1.25rem;">
-                        <p class="text-success" id="reportResultText"></p>
-                        <div class="mt-2">
-                            <a href="#" id="reportDownloadLink" class="btn btn-primary btn-sm" download>⬇️ Download Report CSV</a>
+                    <div class="flex gap-2 mt-4" style="flex-wrap: wrap;">
+                        <div class="form-group" style="flex:1; min-width:220px;">
+                            <label>Scene status</label>
+                            <select id="statusFilter" class="form-control">
+                                <option value="all">All scenes</option>
+                                <option value="completed">Completed only</option>
+                                <option value="failed">Failed only</option>
+                            </select>
                         </div>
+                        <div class="form-group" style="flex:1; min-width:220px;">
+                            <label>Folder structure</label>
+                            <select id="organizeBy" class="form-control">
+                                <option value="type">By asset type (images / voiceovers / videos)</option>
+                                <option value="scene">By scene</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1; min-width:220px;">
+                            <label>Asset types</label>
+                            <div class="flex gap-2 mt-2" style="flex-wrap: wrap;">
+                                <label><input type="checkbox" id="typeImages" checked> Images</label>
+                                <label><input type="checkbox" id="typeVoiceovers" checked> Voiceovers</label>
+                                <label><input type="checkbox" id="typeVideos" checked> Videos</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-center mt-4 mb-2">
+                        <h4>Scene selection</h4>
+                        <div class="flex gap-2">
+                            <button class="btn btn-ghost btn-sm" id="btnSelectAllScenes">Select all</button>
+                            <button class="btn btn-ghost btn-sm" id="btnClearScenes">Clear (export whole project)</button>
+                        </div>
+                    </div>
+                    <div class="table-container" style="max-height: 300px; overflow:auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:40px;"></th>
+                                    <th>Scene</th>
+                                    <th>Status</th>
+                                    <th>Assets</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sceneSelectBody">
+                                <tr><td colspan="4" class="text-muted">Select a project to list its scenes.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-4">
+                        <button class="btn btn-primary" id="btnGenerateZip">📦 Generate ZIP Archive</button>
+                        <span class="text-muted ml-2" id="selectionSummary" style="font-size:0.85rem;"></span>
+                    </div>
+
+                    <div id="exportResultCard" class="glass-card mt-4 hidden" style="padding: 1.5rem;">
+                        <h4 class="text-success">Archive ready</h4>
+                        <p class="text-muted mt-1" id="exportCountInfo"></p>
+                        <a href="#" id="downloadZipLink" class="btn btn-primary btn-sm mt-2" download>⬇️ Download ZIP</a>
                     </div>
                 </div>
 
+                <div class="glass-panel" style="padding: 2rem;">
+                    <h2>📄 Generation Report</h2>
+                    <p class="text-muted mt-1">CSV of every scene with statuses, asset paths, errors and timestamps.</p>
+                    <button id="btnDownloadReportExport" class="btn btn-secondary mt-3">Generate &amp; download report</button>
+                    <div id="reportResult" class="glass-card mt-4 hidden" style="padding: 1.25rem;">
+                        <p class="text-success" id="reportResultText"></p>
+                        <a href="#" id="reportDownloadLink" class="btn btn-primary btn-sm mt-2" download>⬇️ Download report CSV</a>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
 
     <script>
+        const selectedScenes = new Set();
+        let scenes = [];
+
         document.addEventListener('DOMContentLoaded', async () => {
-            const user = await Auth.requireAuth();
+            const user = await Shell.init();
             if (!user) return;
 
-            document.getElementById('userEmail').textContent = user.email;
-
-            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                await Auth.signOut();
-                window.location.href = '/login.html';
-            });
-
-            const projectSelect = document.getElementById('exportProject');
-            const reportSelect = document.getElementById('reportProject');
-
-            function populateReportSelect(projects) {
-                if (!projects || projects.length === 0) {
-                    reportSelect.innerHTML = '<option value="">No projects available</option>';
-                    return;
-                }
-                reportSelect.innerHTML = projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-            }
-
-            async function loadProjects() {
-                try {
-                    const projects = await API.get('/api/projects');
-                    if (!projects || projects.length === 0) {
-                        projectSelect.innerHTML = '<option value="">No projects available</option>';
-                        reportSelect.innerHTML = '<option value="">No projects available</option>';
-                        return;
-                    }
-                    projectSelect.innerHTML = projects.map(p => `<option value="${p.id}">${p.name} (${p.completed_scenes || 0}/${p.total_scenes || 0} completed)</option>`).join('');
-                    populateReportSelect(projects);
-                } catch(e) {
-                    Toast.error("Failed to load projects for export");
-                }
-            }
-
-            document.getElementById('exportForm').onsubmit = async (e) => {
-                e.preventDefault();
-                const projectId = projectSelect.value;
-                if (!projectId) {
-                    Toast.error("Please select a project to export.");
-                    return;
-                }
-
-                const statusFilter = document.querySelector('input[name="statusFilter"]:checked').value;
-                const fileTypes = [];
-                if (document.getElementById('typeImages').checked) fileTypes.push('images');
-                if (document.getElementById('typeVoiceovers').checked) fileTypes.push('voiceovers');
-                if (document.getElementById('typeVideos').checked) fileTypes.push('videos');
-
-                const btn = document.getElementById('btnGenerateZip');
-                btn.disabled = true;
-                btn.textContent = 'Packing ZIP Archive...';
-
-                try {
-                    const res = await API.post('/api/export', {
-                        project_id: String(projectId),
-                        status_filter: statusFilter,
-                        file_types: fileTypes
-                    });
-
-                    document.getElementById('exportResultCard').classList.remove('hidden');
-                    document.getElementById('exportCountInfo').textContent = `Exported ${res.exported_scenes_count} scenes into structured archive.`;
-                    document.getElementById('downloadZipLink').href = res.download_url;
-
-                    Toast.success('ZIP Archive created successfully!');
-                } catch(e) {
-                    Toast.error(`Export failed: ${e.message}`);
-                } finally {
-                    btn.disabled = false;
-                    btn.textContent = '📦 Generate ZIP Archive';
-                }
-            };
-
-            document.getElementById('btnDownloadReportExport').onclick = async () => {
-                const projectId = reportSelect.value;
-                if (!projectId) { Toast.error('Select a project first'); return; }
-
-                const btn = document.getElementById('btnDownloadReportExport');
-                btn.disabled = true;
-                btn.textContent = 'Generating...';
-
-                try {
-                    const res = await API.get(`/api/files/report/${projectId}`);
-                    document.getElementById('reportResult').classList.remove('hidden');
-                    document.getElementById('reportResultText').textContent = `Report ready — ${res.scene_count} scenes from "${res.project_name}"`;
-                    document.getElementById('reportDownloadLink').href = res.download_url;
-                    Toast.success('Report CSV generated!');
-                } catch(e) {
-                    Toast.error(`Report failed: ${e.message}`);
-                } finally {
-                    btn.disabled = false;
-                    btn.textContent = '📄 Generate & Download Report CSV';
-                }
-            };
-
-            loadProjects();
+            await loadProjects();
+            bind();
         });
+
+        async function loadProjects() {
+            const select = document.getElementById('exportProject');
+            try {
+                const projects = await API.get('/api/projects');
+                if (!projects.length) {
+                    select.innerHTML = '<option value="">No projects available</option>';
+                    return;
+                }
+                const preset = new URLSearchParams(window.location.search).get('project_id');
+                select.innerHTML = projects.map(p =>
+                    `<option value="${p.id}" ${String(p.id) === preset ? 'selected' : ''}>${Fmt.esc(p.name)} (${p.completed_scenes || 0}/${p.total_scenes || 0} completed)</option>`
+                ).join('');
+                await loadScenes();
+            } catch (err) {
+                Toast.error(`Failed to load projects: ${err.message}`);
+            }
+        }
+
+        function bind() {
+            document.getElementById('exportProject').onchange = () => {
+                selectedScenes.clear();
+                loadScenes();
+            };
+            document.getElementById('btnSelectAllScenes').onclick = () => {
+                scenes.forEach(s => { if (s.assets.length) selectedScenes.add(s.id); });
+                renderScenes();
+            };
+            document.getElementById('btnClearScenes').onclick = () => {
+                selectedScenes.clear();
+                renderScenes();
+            };
+            document.getElementById('btnGenerateZip').onclick = generateZip;
+            document.getElementById('btnDownloadReportExport').onclick = downloadReport;
+        }
+
+        async function loadScenes() {
+            const projectId = document.getElementById('exportProject').value;
+            const body = document.getElementById('sceneSelectBody');
+            if (!projectId) {
+                body.innerHTML = '<tr><td colspan="4" class="text-muted">Select a project to list its scenes.</td></tr>';
+                return;
+            }
+            try {
+                const data = await API.get(`/api/files/${projectId}`);
+                scenes = data.scenes || [];
+                renderScenes();
+            } catch (err) {
+                body.innerHTML = `<tr><td colspan="4" class="text-danger">${Fmt.esc(err.message)}</td></tr>`;
+            }
+        }
+
+        function renderScenes() {
+            const body = document.getElementById('sceneSelectBody');
+            if (!scenes.length) {
+                body.innerHTML = '<tr><td colspan="4" class="text-muted">This project has no scenes yet.</td></tr>';
+            } else {
+                body.innerHTML = scenes.map(scene => `
+                    <tr>
+                        <td>
+                            <input type="checkbox" ${selectedScenes.has(scene.id) ? 'checked' : ''}
+                                   ${scene.assets.length ? '' : 'disabled'}
+                                   onchange="toggleScene(${scene.id})">
+                        </td>
+                        <td class="font-mono">${Fmt.esc(scene.scene_number)}</td>
+                        <td>${Status.badge(scene.overall_status)}</td>
+                        <td class="text-muted" style="font-size:0.8rem;">
+                            ${scene.assets.length
+                                ? scene.assets.map(a => `<span class="badge badge-secondary">${Fmt.esc(a.asset_type)}</span>`).join(' ')
+                                : 'no generated assets'}
+                        </td>
+                    </tr>
+                `).join('');
+            }
+            updateSummary();
+        }
+
+        window.toggleScene = (id) => {
+            if (selectedScenes.has(id)) selectedScenes.delete(id);
+            else selectedScenes.add(id);
+            updateSummary();
+        };
+
+        function updateSummary() {
+            document.getElementById('selectionSummary').textContent = selectedScenes.size
+                ? `${selectedScenes.size} scene(s) selected`
+                : 'Exporting the entire project';
+        }
+
+        async function generateZip() {
+            const projectId = document.getElementById('exportProject').value;
+            if (!projectId) {
+                Toast.error('Select a project first.');
+                return;
+            }
+
+            const fileTypes = [];
+            if (document.getElementById('typeImages').checked) fileTypes.push('images');
+            if (document.getElementById('typeVoiceovers').checked) fileTypes.push('voiceovers');
+            if (document.getElementById('typeVideos').checked) fileTypes.push('videos');
+            if (!fileTypes.length) {
+                Toast.error('Select at least one asset type.');
+                return;
+            }
+
+            const button = document.getElementById('btnGenerateZip');
+            button.disabled = true;
+            button.textContent = 'Packing archive…';
+
+            try {
+                const result = await API.post('/api/export', {
+                    project_id: String(projectId),
+                    status_filter: document.getElementById('statusFilter').value,
+                    file_types: fileTypes,
+                    scene_ids: selectedScenes.size ? [...selectedScenes] : null,
+                    organize_by: document.getElementById('organizeBy').value,
+                }, { timeout: 180000 });
+
+                document.getElementById('exportResultCard').classList.remove('hidden');
+                document.getElementById('exportCountInfo').textContent =
+                    `${result.asset_count} files from ${result.exported_scenes_count} scene(s)` +
+                    (result.missing_count ? ` · ${result.missing_count} file(s) missing from storage` : '');
+                document.getElementById('downloadZipLink').href = Fmt.media(result.download_url);
+                Toast.success('ZIP archive created.');
+            } catch (err) {
+                Toast.error(`Export failed: ${err.message}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = '📦 Generate ZIP Archive';
+            }
+        }
+
+        async function downloadReport() {
+            const projectId = document.getElementById('exportProject').value;
+            if (!projectId) {
+                Toast.error('Select a project first.');
+                return;
+            }
+
+            const button = document.getElementById('btnDownloadReportExport');
+            button.disabled = true;
+            button.textContent = 'Generating…';
+            try {
+                const result = await API.get(`/api/files/report/${projectId}`);
+                document.getElementById('reportResult').classList.remove('hidden');
+                document.getElementById('reportResultText').textContent =
+                    `Report ready — ${result.scene_count} scenes from "${result.project_name}"`;
+                document.getElementById('reportDownloadLink').href = Fmt.media(result.download_url);
+                Toast.success('Report generated.');
+            } catch (err) {
+                Toast.error(`Report failed: ${err.message}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Generate & download report';
+            }
+        }
     </script>
 </body>
 </html>

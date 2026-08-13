@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Projects - AI Content Studio</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/env.js" defer></script>
+    <script src="/config.js" defer></script>
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
@@ -110,16 +113,8 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const user = await Auth.requireAuth();
+            const user = await Shell.init();
             if (!user) return;
-
-            document.getElementById('userEmail').textContent = user.email;
-
-            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                await Auth.signOut();
-                window.location.href = '/login.html';
-            });
 
             const modal = document.getElementById('createProjectModal');
             document.getElementById('openNewProjectModal').onclick = () => modal.style.display = 'flex';
@@ -137,11 +132,11 @@
 
                     tbody.innerHTML = projects.map(p => `
                         <tr>
-                            <td><strong>${p.name}</strong></td>
-                            <td><span class="badge badge-secondary">${p.mode || 'IMAGE_VOICE'}</span></td>
-                            <td><span class="badge ${p.status === 'COMPLETED' ? 'badge-success' : p.status === 'PROCESSING' ? 'badge-warning' : 'badge-secondary'}">${p.status || 'PENDING'}</span></td>
+                            <td><strong>${Fmt.esc(p.name)}</strong></td>
+                            <td><span class="badge badge-secondary">${Fmt.esc(p.mode || 'IMAGE_VOICE')}</span></td>
+                            <td>${Status.badge(p.worker_active ? 'PROCESSING' : p.status)}</td>
                             <td>${p.completed_scenes || 0} / ${p.total_scenes || 0}</td>
-                            <td>${new Date(p.created_at).toLocaleDateString()}</td>
+                            <td>${Fmt.date(p.created_at)}</td>
                             <td class="d-flex gap-2">
                                 <a href="/project-detail.html?id=${p.id}" class="btn btn-primary btn-sm">Workspace</a>
                                 <button class="btn btn-danger btn-sm" onclick="deleteProject(${p.id})">Delete</button>
@@ -149,7 +144,8 @@
                         </tr>
                     `).join('');
                 } catch(e) {
-                    console.error(e);
+                    document.getElementById('projectsTableBody').innerHTML =
+                        `<tr><td colspan="6" class="text-danger">${Fmt.esc(e.message)}</td></tr>`;
                 }
             }
 

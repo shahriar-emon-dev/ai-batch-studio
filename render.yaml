@@ -1,0 +1,74 @@
+# Render blueprint — FastAPI API + in-process generation worker.
+#
+# The worker runs inside this web service as asyncio background tasks, so the
+# service must NOT be a serverless/scale-to-zero function. Render web services
+# keep the process alive between requests, which is what the generation queue
+# needs.
+#
+# Deploy: Render Dashboard → New → Blueprint → point at this repo.
+
+services:
+  - type: web
+    name: ai-contentstudio-api
+    runtime: python
+    plan: free                      # upgrade to `starter` to stop the 15-min idle sleep
+    region: oregon
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+
+      # --- Supabase (set these in the Render dashboard) ---
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY   # REQUIRED — without it generation cannot persist
+        sync: false
+      - key: SUPABASE_JWT_SECRET         # optional: verifies sessions locally instead of a round trip
+        sync: false
+
+      # --- Secrets ---
+      - key: ENCRYPTION_KEY              # must match whatever encrypted the stored API keys
+        sync: false
+
+      # --- CORS: the Vercel frontend origin(s), comma separated ---
+      # e.g. https://ai-contentstudio.vercel.app,https://your-custom-domain.com
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+      # --- Generation tuning ---
+      - key: MAX_CONCURRENT_JOBS
+        value: "3"
+      - key: RETRY_MAX_ATTEMPTS
+        value: "3"
+      - key: QUOTA_COOLDOWN_SECONDS
+        value: "900"
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "50"
+
+      # --- Models ---
+      - key: DEFAULT_IMAGE_MODEL
+        value: gemini-2.5-flash-image
+      - key: DEFAULT_TTS_MODEL
+        value: gemini-2.5-flash-preview-tts
+      - key: DEFAULT_VIDEO_MODEL
+        value: veo-3.1-fast-generate-preview
+      - key: VIDEO_GENERATION_ENABLED
+        value: "false"
+
+      # FFmpeg is not present on Render's Python runtime, so image+voiceover
+      # merging is reported UNSUPPORTED rather than silently skipped.
+      - key: MERGE_ENABLED
+        value: "false"
+
+      # Generated media is written here. This disk is EPHEMERAL: files are lost
+      # on every deploy, restart and (on the free plan) idle sleep. Export assets
+      # in the same session. On startup the API clears completion state for any
+      # media that no longer exists, so no false ✓ is ever shown.
+      - key: OUTPUT_DIR
+        value: /tmp/output

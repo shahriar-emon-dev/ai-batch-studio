@@ -1,382 +1,769 @@
+"""Background generation orchestrator (proposal §32, §35, §37, §40, §51).
+
+The queue is task-based: every scene is expanded into generation_tasks rows and
+each task is executed, retried, and recorded independently. Progress reported to
+the frontend is always derived from those rows — never from an estimate.
+"""
+
 import asyncio
+import datetime
 import logging
 import os
-import datetime
-from typing import Dict, Any, List, Optional
-from backend.services.google_ai_service import generate_image, generate_speech, RateLimitException, ProviderUnavailableException
-from backend.services.ffmpeg_service import merge_image_audio
-from backend.database import get_admin_client
+from typing import Any, Dict, List, Optional
+
 from backend.config import settings
+from backend.database import get_admin_client
+from backend.services import asset_service, task_service
+from backend.services.api_profile_service import (
+    ApiProfilePool,
+    NoAvailableProfileError,
+    call_with_rotation,
+)
+from backend.services.audit_service import log_activity, log_error, summarize_error
+from backend.services.ffmpeg_service import is_available as ffmpeg_available
+from backend.services.ffmpeg_service import merge_image_audio, merge_video_audio
+from backend.services.google_ai_service import (
+    ProviderUnavailableException,
+    generate_image,
+    generate_speech,
+    generate_video,
+)
+from backend.services.prompt_service import compose_voice_request, negative_prompt_for
 
 logger = logging.getLogger(__name__)
 
-# Active background jobs state: project_id -> {"task": Task, "status": str, "job_id": int, "user_id": str}
+# project_id (str) -> runtime state for an in-flight job
 active_jobs: Dict[str, Dict[str, Any]] = {}
 recovery_lock = asyncio.Lock()
 
-def log_activity(client, project_id: str, user_id: Optional[str], level: str, message: str, scene_id=None, scene_number=None):
-    """Inserts a record into activity_logs. Silently ignores errors to never block generation."""
+IMAGE_EXTENSIONS = ("png", "jpg", "jpeg", "webp")
+AUDIO_EXTENSIONS = ("mp3", "wav")
+
+
+def _now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+class JobControl:
+    """Cooperative pause/cancel signalling for a project's workers."""
+
+    def __init__(self) -> None:
+        self.cancelled = asyncio.Event()
+        self.paused = asyncio.Event()
+
+    @property
+    def stopping(self) -> bool:
+        return self.cancelled.is_set() or self.paused.is_set()
+
+
+# ---------------------------------------------------------------------------
+# Scene + job state derived from task rows
+# ---------------------------------------------------------------------------
+
+def _scene_status_from_tasks(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Translate a scene's task rows into the scene columns the UI reads."""
+    by_type = {t.get("task_type"): t for t in tasks}
+
+    def granular(task_type: str, generating: str, completed: str) -> str:
+        task = by_type.get(task_type)
+        if not task:
+            return "PENDING"
+        status = task.get("status")
+        if status == task_service.STATUS_COMPLETED:
+            return completed
+        if status in task_service.ACTIVE_STATUSES:
+            return generating
+        if status == task_service.STATUS_UNSUPPORTED:
+            return "UNSUPPORTED"
+        if status == task_service.STATUS_FAILED:
+            return "FAILED"
+        if status == task_service.STATUS_CANCELLED:
+            return "CANCELLED"
+        return "PENDING"
+
+    statuses = [t.get("status") for t in tasks]
+    generated = [t for t in tasks if t.get("task_type") != task_service.TASK_MERGE]
+
+    if not tasks:
+        overall = "PENDING"
+    elif any(s in task_service.ACTIVE_STATUSES for s in statuses):
+        overall = "PROCESSING"
+    elif any(s == task_service.STATUS_FAILED for s in statuses):
+        overall = "FAILED"
+    elif any(s in (task_service.STATUS_PENDING, task_service.STATUS_QUEUED) for s in statuses):
+        overall = "PENDING"
+    elif any(s == task_service.STATUS_CANCELLED for s in statuses):
+        overall = "CANCELLED"
+    elif generated and all(
+        t.get("status") in (task_service.STATUS_UNSUPPORTED, task_service.STATUS_SKIPPED)
+        for t in generated
+    ):
+        overall = "SKIPPED"
+    elif any(s == task_service.STATUS_COMPLETED for s in statuses):
+        overall = "COMPLETED"
+    else:
+        overall = "PENDING"
+
+    errors = [t.get("error_message") for t in tasks if t.get("status") == task_service.STATUS_FAILED]
+
+    return {
+        "visual_status": granular(task_service.TASK_IMAGE, "VISUAL_GENERATING", "VISUAL_COMPLETED"),
+        "voice_status": granular(task_service.TASK_VOICEOVER, "VOICE_GENERATING", "VOICE_COMPLETED"),
+        "video_status": granular(task_service.TASK_VIDEO, "PROCESSING", "COMPLETED"),
+        "merge_status": granular(task_service.TASK_MERGE, "MERGING", "COMPLETED"),
+        "overall_status": overall,
+        "error_message": errors[0] if errors else None,
+    }
+
+
+def sync_scene_state(scene_id: Any) -> Dict[str, Any]:
+    """Recompute one scene's columns from its tasks and persist them."""
+    client = get_admin_client()
+    if not client:
+        return {}
+    try:
+        tasks = (
+            client.table("generation_tasks")
+            .select("task_type, status, error_message, storage_path")
+            .eq("scene_id", scene_id)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as exc:
+        logger.error("Could not load tasks for scene %s: %s", scene_id, exc)
+        return {}
+
+    updates = _scene_status_from_tasks(tasks)
+
+    # Paths come from completed tasks only, so a path never implies a
+    # completion that did not happen (§34).
+    path_columns = {
+        task_service.TASK_IMAGE: "visual_path",
+        task_service.TASK_VOICEOVER: "audio_path",
+        task_service.TASK_VIDEO: "video_path",
+        task_service.TASK_MERGE: "merged_path",
+    }
+    for task in tasks:
+        column = path_columns.get(task.get("task_type"))
+        if column and task.get("status") == task_service.STATUS_COMPLETED:
+            updates[column] = task.get("storage_path")
+
+    updates["updated_at"] = _now_iso()
+    try:
+        client.table("scenes").update(updates).eq("id", scene_id).execute()
+    except Exception as exc:
+        logger.error("Could not update scene %s: %s", scene_id, exc)
+    return updates
+
+
+async def update_job_progress(job_id: Optional[int], project_id: Any) -> Dict[str, Any]:
+    """Roll task counts up into generation_jobs and projects (§35, §55)."""
+    client = get_admin_client()
+    if not client:
+        return {}
+
+    # Counted across the whole project, not just this job: tasks completed by an
+    # earlier run must still show as done after a refresh or resume (§38).
+    progress = task_service.compute_progress(client, project_id)
+    overall = progress["overall"]
+    now = _now_iso()
+
+    job_update = {
+        "total_tasks": overall["total"],
+        "completed_tasks": overall["completed"],
+        "failed_tasks": overall["failed"],
+        "processing_tasks": overall["processing"],
+        "pending_tasks": overall["pending"],
+        "updated_at": now,
+    }
+
+    settled = overall["pending"] == 0 and overall["processing"] == 0 and overall["total"] > 0
+    if settled:
+        job_update["status"] = "COMPLETED" if overall["failed"] == 0 else "FAILED"
+        job_update["completed_at"] = now
+
+    if job_id:
+        try:
+            client.table("generation_jobs").update(job_update).eq("id", job_id).execute()
+        except Exception as exc:
+            logger.error("Job %s progress update failed: %s", job_id, exc)
+
+    # Project-level scene counters stay scene-based: that is what the
+    # dashboard and project list display.
+    try:
+        scenes = (
+            client.table("scenes")
+            .select("overall_status")
+            .eq("project_id", str(project_id))
+            .execute()
+            .data
+            or []
+        )
+        completed = sum(1 for s in scenes if s.get("overall_status") == "COMPLETED")
+        failed = sum(1 for s in scenes if s.get("overall_status") == "FAILED")
+        skipped = sum(1 for s in scenes if s.get("overall_status") in ("SKIPPED", "CANCELLED"))
+        active = sum(1 for s in scenes if s.get("overall_status") in ("PROCESSING", "PENDING"))
+
+        project_update: Dict[str, Any] = {
+            "total_scenes": len(scenes),
+            "completed_scenes": completed,
+            "failed_scenes": failed,
+            "skipped_scenes": skipped,
+            "updated_at": now,
+        }
+        if active == 0 and scenes:
+            project_update["status"] = "COMPLETED" if failed == 0 else "FAILED"
+            project_update["finished_at"] = now
+        elif str(project_id) in active_jobs:
+            project_update["status"] = "PROCESSING"
+
+        client.table("projects").update(project_update).eq("id", str(project_id)).execute()
+    except Exception as exc:
+        logger.error("Project %s progress update failed: %s", project_id, exc)
+
+    return progress
+
+
+# ---------------------------------------------------------------------------
+# Task execution
+# ---------------------------------------------------------------------------
+
+async def _execute_image(scene, task, pool, defaults):
+    negative = negative_prompt_for(scene, defaults)
+    aspect = scene.get("aspect_ratio") or defaults.get("default_aspect_ratio") or "16:9"
+    data, profile = await call_with_rotation(
+        pool, generate_image, task["prompt"], aspect, negative
+    )
+    absolute, url = asset_service.write_asset_file("image", scene["id"], "png", data)
+    return absolute, url, profile, settings.image_model
+
+
+async def _execute_voiceover(scene, task, pool, defaults):
+    script, options = compose_voice_request(scene, defaults)
+    result, profile = await call_with_rotation(
+        pool,
+        generate_speech,
+        script or task["prompt"],
+        options["voice"],
+        options["language"],
+        options["speed"],
+        options["pitch"],
+    )
+    data, extension = result
+    absolute, url = asset_service.write_asset_file("voiceover", scene["id"], extension, data)
+    return absolute, url, profile, "google-tts"
+
+
+async def _execute_video(scene, task, pool, defaults):
+    negative = negative_prompt_for(scene, defaults)
+    aspect = scene.get("aspect_ratio") or defaults.get("default_aspect_ratio") or "16:9"
+    data, profile = await call_with_rotation(
+        pool, generate_video, task["prompt"], aspect, scene.get("duration"), negative
+    )
+    absolute, url = asset_service.write_asset_file("video", scene["id"], "mp4", data)
+    return absolute, url, profile, settings.video_model
+
+
+async def _execute_merge(scene, task, pool, defaults):
+    """Merge is local work — no API profile involved."""
+    if not ffmpeg_available():
+        raise ProviderUnavailableException(
+            "FFmpeg is not installed on this server, so image+voiceover merging is unavailable."
+        )
+
+    audio = asset_service.stored_asset_path("voiceover", scene["id"], AUDIO_EXTENSIONS)
+    if not audio:
+        raise ProviderUnavailableException("No voiceover available to merge")
+
+    video = asset_service.stored_asset_path("video", scene["id"], ("mp4",))
+    output_absolute, output_url = asset_service.storage_paths("merged", scene["id"], "mp4")
+
+    if video:
+        await merge_video_audio(video[0], audio[0], output_absolute)
+    else:
+        image = asset_service.stored_asset_path("image", scene["id"], IMAGE_EXTENSIONS)
+        if not image:
+            raise ProviderUnavailableException("No image available to merge")
+        await merge_image_audio(image[0], audio[0], output_absolute)
+
+    return output_absolute, output_url, None, "ffmpeg"
+
+
+TASK_EXECUTORS = {
+    task_service.TASK_IMAGE: _execute_image,
+    task_service.TASK_VOICEOVER: _execute_voiceover,
+    task_service.TASK_VIDEO: _execute_video,
+    task_service.TASK_MERGE: _execute_merge,
+}
+
+ASSET_TYPE_FOR_TASK = {
+    task_service.TASK_IMAGE: "image",
+    task_service.TASK_VOICEOVER: "voiceover",
+    task_service.TASK_VIDEO: "video",
+    task_service.TASK_MERGE: "merged",
+}
+
+EXISTING_EXTENSIONS = {
+    task_service.TASK_IMAGE: IMAGE_EXTENSIONS,
+    task_service.TASK_VOICEOVER: AUDIO_EXTENSIONS,
+    task_service.TASK_VIDEO: ("mp4",),
+    task_service.TASK_MERGE: ("mp4",),
+}
+
+
+def _merge_is_stale(scene_id: Any, merged_path: str) -> bool:
+    """True when the merged output predates the image/voiceover it was built from."""
+    try:
+        merged_at = os.path.getmtime(merged_path)
+    except OSError:
+        return True
+
+    newest_input = max(
+        asset_service.newest_mtime("image", scene_id, IMAGE_EXTENSIONS),
+        asset_service.newest_mtime("voiceover", scene_id, AUDIO_EXTENSIONS),
+        asset_service.newest_mtime("video", scene_id, ("mp4",)),
+    )
+    return newest_input > merged_at
+
+
+async def process_task(
+    scene: Dict[str, Any],
+    task: Dict[str, Any],
+    pool: ApiProfilePool,
+    defaults: Dict[str, Any],
+    user_id: Optional[str],
+    project_id: Any,
+) -> str:
+    """Run one task to a terminal state. Returns the final status."""
+    task_id = task.get("id")
+    task_type = task["task_type"]
+    scene_number = scene.get("scene_number") or scene.get("id")
+    asset_type = ASSET_TYPE_FOR_TASK[task_type]
+    attempt = (task.get("attempt_count") or 0) + 1
+
+    # Idempotency: a verified file on disk means this task is already done.
+    # A merge is the exception — it must be redone when either input is newer
+    # than the merged output, otherwise a regenerated image or voiceover would
+    # silently keep the previous video.
+    existing = asset_service.stored_asset_path(asset_type, scene["id"], EXISTING_EXTENSIONS[task_type])
+    if existing and task_type == task_service.TASK_MERGE and _merge_is_stale(scene["id"], existing[0]):
+        existing = None
+
+    if existing and task.get("status") != task_service.STATUS_COMPLETED:
+        absolute, url = existing
+        asset_service.register_asset(
+            user_id, project_id, scene["id"], asset_type, absolute, url,
+            scene_number=scene_number, task_id=task_id,
+            display_filename=_display_filename(scene, asset_type, absolute),
+            prompt=task.get("prompt") or "",
+        )
+        task_service.mark_completed(task_id, url)
+        return task_service.STATUS_COMPLETED
+
+    task_service.mark_processing(task_id, attempt)
+    log_activity(project_id, user_id, "INFO", f"Scene {scene_number} — {task_type} generation started",
+                 scene_id=scene["id"], scene_number=scene_number)
+
+    try:
+        absolute, url, profile, model = await TASK_EXECUTORS[task_type](scene, task, pool, defaults)
+    except ProviderUnavailableException as exc:
+        task_service.mark_unsupported(task_id, str(exc))
+        log_activity(project_id, user_id, "WARNING",
+                     f"Scene {scene_number} — {task_type} unsupported: {exc}",
+                     scene_id=scene["id"], scene_number=scene_number)
+        log_error(user_id, project_id, "UNSUPPORTED", str(exc), scene_id=scene["id"], task_id=task_id)
+        return task_service.STATUS_UNSUPPORTED
+    except NoAvailableProfileError:
+        # Not the task's fault — leave it queued so a resume picks it up.
+        task_service.mark_status(task_id, task_service.STATUS_QUEUED)
+        raise
+    except Exception as exc:
+        details = summarize_error(exc)
+        task_service.mark_failed(task_id, details["category"], details["message"], attempt)
+        log_activity(project_id, user_id, "ERROR",
+                     f"Scene {scene_number} — {task_type} failed: {details['message']}",
+                     scene_id=scene["id"], scene_number=scene_number)
+        log_error(user_id, project_id, details["category"], details["message"],
+                  scene_id=scene["id"], task_id=task_id, is_retryable=details["retryable"],
+                  attempt_count=attempt)
+        return task_service.STATUS_FAILED
+
+    profile_id = profile.get("id") if profile else None
+    asset = asset_service.register_asset(
+        user_id, project_id, scene["id"], asset_type, absolute, url,
+        scene_number=scene_number, task_id=task_id,
+        display_filename=_display_filename(scene, asset_type, absolute),
+        prompt=task.get("prompt") or "", model=model,
+        provider="ffmpeg" if task_type == task_service.TASK_MERGE else "google",
+    )
+
+    if not asset:
+        message = "Generated output could not be verified in storage"
+        task_service.mark_failed(task_id, "STORAGE_ERROR", message, attempt)
+        log_error(user_id, project_id, "STORAGE_ERROR", message,
+                  scene_id=scene["id"], task_id=task_id, is_retryable=True, attempt_count=attempt)
+        return task_service.STATUS_FAILED
+
+    task_service.mark_completed(task_id, url, profile_id)
+    log_activity(project_id, user_id, "SUCCESS",
+                 f"Scene {scene_number} — {task_type} completed ({os.path.basename(absolute)})",
+                 scene_id=scene["id"], scene_number=scene_number)
+    return task_service.STATUS_COMPLETED
+
+
+def _display_filename(scene: Dict[str, Any], asset_type: str, absolute_path: str) -> str:
+    """Human-friendly name used in exports; storage keys stay id-based."""
+    extension = os.path.splitext(absolute_path)[1]
+    base = asset_service.safe_filename(
+        scene.get("filename") or "", f"scene_{scene.get('scene_number') or scene.get('id')}"
+    )
+    base = os.path.splitext(base)[0]
+    suffix = {"image": "", "voiceover": "_voiceover", "video": "_video", "merged": "_merged"}[asset_type]
+    return f"{base}{suffix}{extension}"
+
+
+# ---------------------------------------------------------------------------
+# Workers
+# ---------------------------------------------------------------------------
+
+async def _process_scene(
+    scene: Dict[str, Any],
+    pool: ApiProfilePool,
+    defaults: Dict[str, Any],
+    user_id: Optional[str],
+    project_id: Any,
+    job_id: Optional[int],
+    control: JobControl,
+) -> None:
+    client = get_admin_client()
     if not client:
         return
-    try:
-        pid = int(project_id) if project_id and str(project_id).isdigit() else None
-        sid = int(scene_id) if scene_id and str(scene_id).isdigit() else None
-        client.table("activity_logs").insert({
-            "project_id": pid,
-            "user_id": user_id,
-            "scene_id": sid,
-            "scene_number": str(scene_number) if scene_number else None,
-            "level": level,  # INFO, SUCCESS, WARNING, ERROR
-            "message": message,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
-        }).execute()
-    except Exception as e:
-        logger.debug(f"Activity logging exception: {e}")
 
-async def update_job_progress(job_id: int, project_id: str):
-    """Calculates aggregate metrics and updates generation_jobs and projects tables in Supabase."""
-    client = get_admin_client()
-    if not client or not job_id:
+    try:
+        tasks = (
+            client.table("generation_tasks")
+            .select("*")
+            .eq("scene_id", scene["id"])
+            .in_("status", sorted(task_service.OPEN_STATUSES))
+            .execute()
+            .data
+            or []
+        )
+    except Exception as exc:
+        logger.error("Could not load tasks for scene %s: %s", scene["id"], exc)
         return
 
-    try:
-        pid_str = str(project_id)
-        scenes_res = client.table("scenes").select("overall_status").eq("project_id", pid_str).execute()
-        scenes = scenes_res.data or []
-        
-        total = len(scenes)
-        completed = sum(1 for s in scenes if s.get("overall_status") in ["COMPLETED", "completed"])
-        failed = sum(1 for s in scenes if s.get("overall_status") in ["FAILED", "failed"])
-        skipped = sum(1 for s in scenes if s.get("overall_status") in ["SKIPPED", "skipped", "UNSUPPORTED", "unsupported"])
-        processing = sum(1 for s in scenes if s.get("overall_status") in ["PROCESSING", "generating", "VISUAL_GENERATING", "VOICE_GENERATING"])
-        pending = total - (completed + failed + processing + skipped)
-        
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
-        # Update generation_jobs
-        job_update = {
-            "total_tasks": total,
-            "completed_tasks": completed,
-            "failed_tasks": failed,
-            "processing_tasks": processing,
-            "pending_tasks": max(0, pending),
-            "updated_at": now_iso
-        }
-        
-        if pending <= 0 and processing == 0 and total > 0:
-            job_update["status"] = "COMPLETED" if failed == 0 else "FAILED"
-            job_update["completed_at"] = now_iso
-            
-        client.table("generation_jobs").update(job_update).eq("id", job_id).execute()
-        
-        # Update projects table summary
-        proj_update = {
-            "total_scenes": total,
-            "completed_scenes": completed,
-            "failed_scenes": failed
-        }
-        if pending <= 0 and processing == 0 and total > 0:
-            proj_update["status"] = "COMPLETED" if failed == 0 else "FAILED"
-            proj_update["finished_at"] = now_iso
-        elif processing > 0 or pending > 0:
-            proj_update["status"] = "PROCESSING"
-            
-        client.table("projects").update(proj_update).eq("id", pid_str).execute()
-    except Exception as e:
-        logger.error(f"Failed to update job progress for job {job_id}: {e}")
+    # Merge depends on the other assets, so it always runs last.
+    order = {task_service.TASK_IMAGE: 0, task_service.TASK_VOICEOVER: 1,
+             task_service.TASK_VIDEO: 2, task_service.TASK_MERGE: 3}
+    tasks.sort(key=lambda t: order.get(t.get("task_type"), 9))
 
-async def process_scene(project_id: str, scene_id: str, scene_data: Dict[str, Any], api_key: str, user_id: Optional[str] = None, job_id: Optional[int] = None):
-    """Processes a single scene: Visual -> Voice -> Merge, updating granular statuses."""
-    client = get_admin_client()
-    pid_str = str(project_id)
-    scene_num = scene_data.get("scene_number") or str(scene_id)
-    
-    media_type = (scene_data.get("media_type") or "").lower()
-    is_video_only = media_type in ["video"]
-    is_video_voice = media_type in ["video_voice"]
+    for task in tasks:
+        if control.stopping:
+            task_service.mark_status(
+                task["id"],
+                task_service.STATUS_CANCELLED if control.cancelled.is_set() else task_service.STATUS_QUEUED,
+            )
+            continue
+        await process_task(scene, task, pool, defaults, user_id, project_id)
 
-    # Check for UNSUPPORTED Video models (Veo)
-    if is_video_only or is_video_voice:
-        log_activity(client, pid_str, user_id, "WARNING", f"Scene {scene_num} — Skipped: Video generation unsupported", scene_id=scene_id, scene_number=scene_num)
-        if client:
-            client.table("scenes").update({
-                "visual_status": "UNSUPPORTED",
-                "overall_status": "SKIPPED",
-                "error_message": "Video generation (Veo) is not yet available. Scene skipped."
-            }).eq("id", scene_id).execute()
-            
-        if is_video_voice and scene_data.get("voiceover_script"):
-            audio_text = scene_data.get("voiceover_script", "")
-            audio_filename = f"{scene_id}.mp3"
-            audio_path = os.path.join(settings.audio_dir, audio_filename)
-            
-            if audio_text and not os.path.exists(audio_path):
-                log_activity(client, pid_str, user_id, "INFO", f"Scene {scene_num} — Voiceover generation started", scene_id=scene_id, scene_number=scene_num)
-                audio_bytes = await generate_speech(api_key, audio_text)
-                with open(audio_path, "wb") as f:
-                    f.write(audio_bytes)
-                log_activity(client, pid_str, user_id, "SUCCESS", f"Scene {scene_num} — Voiceover generated and saved", scene_id=scene_id, scene_number=scene_num)
-                
-            if client:
-                client.table("scenes").update({
-                    "voice_status": "VOICE_COMPLETED",
-                    "audio_path": f"/output/audio/{audio_filename}"
-                }).eq("id", scene_id).execute()
+    sync_scene_state(scene["id"])
+    await update_job_progress(job_id, project_id)
 
-        if job_id:
-            await update_job_progress(job_id, pid_str)
-        return
 
-    try:
-        log_activity(client, pid_str, user_id, "INFO", f"Scene {scene_num} — Processing started", scene_id=scene_id, scene_number=scene_num)
-        
-        if client:
-            client.table("scenes").update({
-                "visual_status": "VISUAL_GENERATING",
-                "overall_status": "PROCESSING"
-            }).eq("id", scene_id).execute()
-            
-        # 1. Visual Generation (Image) with Dynamic Prompt Composition
-        raw_prompt = scene_data.get("visual_prompt", "")
-        master_prompt = scene_data.get("master_prompt", "")
-        style = scene_data.get("style", "")
-        tone = scene_data.get("tone", "")
-        custom_meta = scene_data.get("custom_metadata", {}) or {}
-        
-        prompt_parts = []
-        if master_prompt: prompt_parts.append(master_prompt.strip())
-        if raw_prompt: prompt_parts.append(raw_prompt.strip())
-        if style: prompt_parts.append(f"Style: {style.strip()}")
-        if tone: prompt_parts.append(f"Tone: {tone.strip()}")
-        
-        if isinstance(custom_meta, dict):
-            for k, v in custom_meta.items():
-                if v and isinstance(v, str) and k.lower() in ["character", "camera_angle", "lighting", "location", "mood"]:
-                    prompt_parts.append(f"{k.replace('_', ' ').title()}: {v.strip()}")
-                    
-        final_image_prompt = ", ".join(prompt_parts) if prompt_parts else raw_prompt
-        aspect_ratio = scene_data.get("aspect_ratio", "16:9")
-        image_filename = f"{scene_id}.png"
-        image_path = os.path.join(settings.images_dir, image_filename)
-        
-        if final_image_prompt and not os.path.exists(image_path):
-            log_activity(client, pid_str, user_id, "INFO", f"Scene {scene_num} — Image generation started", scene_id=scene_id, scene_number=scene_num)
-            image_bytes = await generate_image(api_key, final_image_prompt, aspect_ratio=aspect_ratio)
-            with open(image_path, "wb") as f:
-                f.write(image_bytes)
-            log_activity(client, pid_str, user_id, "SUCCESS", f"Scene {scene_num} — Image generated and saved", scene_id=scene_id, scene_number=scene_num)
-                
-        if client:
-            client.table("scenes").update({
-                "visual_status": "VISUAL_COMPLETED",
-                "visual_path": f"/output/images/{image_filename}",
-                "voice_status": "VOICE_GENERATING"
-            }).eq("id", scene_id).execute()
-
-        # 2. Voiceover Generation (Audio)
-        audio_text = scene_data.get("voiceover_script", "")
-        audio_filename = f"{scene_id}.mp3"
-        audio_path = os.path.join(settings.audio_dir, audio_filename)
-        
-        if audio_text and not os.path.exists(audio_path):
-            log_activity(client, pid_str, user_id, "INFO", f"Scene {scene_num} — Voiceover generation started", scene_id=scene_id, scene_number=scene_num)
-            audio_bytes = await generate_speech(api_key, audio_text)
-            with open(audio_path, "wb") as f:
-                f.write(audio_bytes)
-            log_activity(client, pid_str, user_id, "SUCCESS", f"Scene {scene_num} — Voiceover generated and saved", scene_id=scene_id, scene_number=scene_num)
-                
-        if client:
-            client.table("scenes").update({
-                "voice_status": "VOICE_COMPLETED",
-                "audio_path": f"/output/audio/{audio_filename}"
-            }).eq("id", scene_id).execute()
-
-        # 3. Merge Video (Image + Audio)
-        video_filename = f"{scene_id}.mp4"
-        video_path = os.path.join(settings.merged_dir, video_filename)
-        
-        if os.path.exists(image_path) and os.path.exists(audio_path) and not os.path.exists(video_path):
-            log_activity(client, pid_str, user_id, "INFO", f"Scene {scene_num} — Merging image + audio", scene_id=scene_id, scene_number=scene_num)
-            await merge_image_audio(image_path, audio_path, video_path)
-            log_activity(client, pid_str, user_id, "SUCCESS", f"Scene {scene_num} — Video merged successfully", scene_id=scene_id, scene_number=scene_num)
-            
-        if client:
-            client.table("scenes").update({
-                "overall_status": "COMPLETED",
-                "visual_path": f"/output/images/{image_filename}",
-                "audio_path": f"/output/audio/{audio_filename}",
-                "merged_path": f"/output/merged/{video_filename}" if os.path.exists(video_path) else None,
-                "error_message": None
-            }).eq("id", scene_id).execute()
-            
-        log_activity(client, pid_str, user_id, "SUCCESS", f"Scene {scene_num} — ✓ All assets completed", scene_id=scene_id, scene_number=scene_num)
-            
-    except RateLimitException as rle:
-        logger.warning(f"Rate limit hit during scene {scene_id}: {rle}")
-        log_activity(client, pid_str, user_id, "WARNING", f"Scene {scene_num} — Rate limit hit (HTTP 429). Job paused.", scene_id=scene_id, scene_number=scene_num)
-        if client:
-            client.table("scenes").update({
-                "overall_status": "FAILED",
-                "error_message": "Rate limit / Quota exceeded (HTTP 429). Job paused."
-            }).eq("id", scene_id).execute()
-        raise rle
-    except Exception as e:
-        err_msg = str(e)
-        logger.error(f"Error processing scene {scene_id}: {err_msg}")
-        log_activity(client, pid_str, user_id, "ERROR", f"Scene {scene_num} — Failed: {err_msg}", scene_id=scene_id, scene_number=scene_num)
-        if client:
-            client.table("scenes").update({
-                "overall_status": "FAILED",
-                "error_message": err_msg
-            }).eq("id", scene_id).execute()
-    finally:
-        if job_id:
-            await update_job_progress(job_id, pid_str)
-
-async def generation_worker(queue: asyncio.Queue, api_key: str, user_id: Optional[str] = None, job_id: Optional[int] = None):
-    """Worker task that processes scenes from queue."""
-    client = get_admin_client()
+async def generation_worker(
+    queue: asyncio.Queue,
+    pool: ApiProfilePool,
+    defaults: Dict[str, Any],
+    user_id: Optional[str],
+    project_id: Any,
+    job_id: Optional[int],
+    control: JobControl,
+) -> None:
     while True:
-        job = await queue.get()
         try:
-            await process_scene(job["project_id"], job["scene_id"], job["scene_data"], api_key, user_id=user_id, job_id=job_id)
-        except RateLimitException:
-            logger.warning("Worker encountered rate limit. Pausing job queue processing.")
-            if client and job_id:
-                client.table("generation_jobs").update({"status": "PAUSED"}).eq("id", job_id).execute()
-                client.table("projects").update({"status": "PAUSED"}).eq("id", str(job["project_id"])).execute()
-            break
+            scene = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return
+
+        try:
+            if control.stopping:
+                return
+            await _process_scene(scene, pool, defaults, user_id, project_id, job_id, control)
+        except NoAvailableProfileError as exc:
+            # Every key is parked. Pause rather than failing every remaining
+            # task, and record the provider's own words as the reason (§13).
+            logger.warning("Pausing project %s: %s", project_id, exc)
+            control.paused.set()
+            await _pause_job_state(project_id, job_id, user_id, str(exc))
+            return
         except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Worker error: {e}")
+            raise
+        except Exception as exc:
+            logger.exception("Worker error on scene %s: %s", scene.get("id"), exc)
         finally:
             queue.task_done()
 
-async def start_generation(project_id: str, scenes: List[Dict[str, Any]], api_key: str, user_id: Optional[str] = None) -> int:
-    """Starts background generation for scenes, creating a generation_jobs record."""
-    pid_str = str(project_id)
-    if pid_str in active_jobs and active_jobs[pid_str].get("status") == "PROCESSING":
-        return active_jobs[pid_str]["job_id"]
-        
-    client = get_admin_client()
-    job_id = None
-    if client and user_id:
-        try:
-            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            job_res = client.table("generation_jobs").insert({
-                "project_id": pid_str,
-                "user_id": user_id,
-                "status": "PROCESSING",
-                "total_tasks": len(scenes),
-                "pending_tasks": len(scenes),
-                "started_at": now_iso
-            }).execute()
-            if job_res.data:
-                job_id = job_res.data[0]["id"]
-                client.table("projects").update({"status": "PROCESSING", "started_at": now_iso}).eq("id", pid_str).execute()
-        except Exception as e:
-            logger.error(f"Failed to create generation_job: {e}")
 
-    log_activity(client, pid_str, user_id, "INFO", f"Batch generation started — {len(scenes)} scenes queued")
-
-    queue = asyncio.Queue()
-    for scene in scenes:
-        await queue.put({"project_id": pid_str, "scene_id": scene["id"], "scene_data": scene})
-        
-    workers = []
-    for _ in range(settings.default_concurrency):
-        worker = asyncio.create_task(generation_worker(queue, api_key, user_id=user_id, job_id=job_id))
-        workers.append(worker)
-        
-    async def wait_and_cleanup():
-        try:
-            await queue.join()
-        except asyncio.CancelledError:
-            pass
-        finally:
-            for w in workers:
-                w.cancel()
-            if pid_str in active_jobs:
-                del active_jobs[pid_str]
-            if job_id:
-                await update_job_progress(job_id, pid_str)
-            
-    active_jobs[pid_str] = {
-        "task": asyncio.create_task(wait_and_cleanup()),
-        "workers": workers,
-        "status": "PROCESSING",
-        "job_id": job_id,
-        "user_id": user_id
-    }
-    return job_id or 0
-
-def pause_generation(project_id: str):
-    """Pauses active generation for a project."""
-    pid_str = str(project_id)
-    client = get_admin_client()
-    if pid_str in active_jobs:
-        job_info = active_jobs[pid_str]
-        job_info["status"] = "PAUSED"
-        user_id = job_info.get("user_id")
-        for w in job_info.get("workers", []):
-            w.cancel()
-        job_info["task"].cancel()
-        job_id = job_info.get("job_id")
-        del active_jobs[pid_str]
-        
-        log_activity(client, pid_str, user_id, "WARNING", "Generation paused by user")
-        if client:
-            client.table("projects").update({"status": "PAUSED"}).eq("id", pid_str).execute()
-            if job_id:
-                client.table("generation_jobs").update({"status": "PAUSED"}).eq("id", job_id).execute()
-
-def cancel_generation(project_id: str):
-    """Cancels active generation for a project."""
-    pid_str = str(project_id)
-    client = get_admin_client()
-    if pid_str in active_jobs:
-        job_info = active_jobs[pid_str]
-        user_id = job_info.get("user_id")
-        for w in job_info.get("workers", []):
-            w.cancel()
-        job_info["task"].cancel()
-        job_id = job_info.get("job_id")
-        del active_jobs[pid_str]
-        
-        log_activity(client, pid_str, user_id, "WARNING", "Generation cancelled by user")
-        if client:
-            client.table("projects").update({"status": "CANCELLED"}).eq("id", pid_str).execute()
-            if job_id:
-                client.table("generation_jobs").update({"status": "CANCELLED"}).eq("id", job_id).execute()
-
-async def recover_pending_jobs():
-    """Recovers scenes stuck in generating or pending status on startup."""
+async def _pause_job_state(project_id: Any, job_id: Optional[int], user_id: Optional[str], reason: str) -> None:
     client = get_admin_client()
     if not client:
-        logger.warning("No admin client available, skipping job recovery.")
         return
-        
-    async with recovery_lock:
-        logger.info("Checking for pending/generating scenes to recover...")
+    try:
+        client.table("projects").update({"status": "PAUSED"}).eq("id", str(project_id)).execute()
+        if job_id:
+            client.table("generation_jobs").update({"status": "PAUSED"}).eq("id", job_id).execute()
+    except Exception as exc:
+        logger.error("Could not mark project %s paused: %s", project_id, exc)
+    log_activity(project_id, user_id, "WARNING", f"Generation paused — {reason}")
+
+
+# ---------------------------------------------------------------------------
+# Public API used by the routers
+# ---------------------------------------------------------------------------
+
+async def start_generation(
+    project_id: Any,
+    scenes: List[Dict[str, Any]],
+    pool: ApiProfilePool,
+    user_id: Optional[str] = None,
+    defaults: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Plan tasks for the given scenes and run them in the background."""
+    pid = str(project_id)
+    defaults = defaults or {}
+
+    if pid in active_jobs:
+        return {"job_id": active_jobs[pid].get("job_id"), "status": "ALREADY_RUNNING", "task_count": 0}
+
+    client = get_admin_client()
+    if not client:
+        raise RuntimeError("Database is not configured; cannot start generation")
+
+    job_id: Optional[int] = None
+    try:
+        job = (
+            client.table("generation_jobs")
+            .insert(
+                {
+                    "project_id": int(pid),
+                    "user_id": user_id,
+                    "status": "PROCESSING",
+                    "started_at": _now_iso(),
+                }
+            )
+            .execute()
+        )
+        if job.data:
+            job_id = job.data[0]["id"]
+    except Exception as exc:
+        logger.error("Could not create generation job for project %s: %s", pid, exc)
+
+    # Expand scenes into tasks (§32). Scenes with nothing to generate are skipped.
+    task_count = 0
+    runnable: List[Dict[str, Any]] = []
+    for scene in scenes:
+        planned = task_service.plan_tasks(scene, defaults)
+        if not planned:
+            client.table("scenes").update(
+                {"overall_status": "SKIPPED", "error_message": "No generatable content in this row"}
+            ).eq("id", scene["id"]).execute()
+            continue
+        for item in planned:
+            row = task_service.upsert_task(user_id, pid, job_id, scene, item["task_type"], item["prompt"])
+            if row and row.get("status") != task_service.STATUS_COMPLETED:
+                task_count += 1
+        runnable.append(scene)
+
+    if not runnable:
+        if job_id:
+            client.table("generation_jobs").update(
+                {"status": "COMPLETED", "completed_at": _now_iso()}
+            ).eq("id", job_id).execute()
+        return {"job_id": job_id, "status": "NOTHING_TO_DO", "task_count": 0}
+
+    try:
+        client.table("projects").update({"status": "PROCESSING", "started_at": _now_iso()}).eq("id", pid).execute()
+    except Exception as exc:
+        logger.error("Could not mark project %s processing: %s", pid, exc)
+
+    log_activity(pid, user_id, "INFO",
+                 f"Batch generation started — {len(runnable)} scenes, {task_count} tasks queued")
+
+    queue: asyncio.Queue = asyncio.Queue()
+    for scene in runnable:
+        queue.put_nowait(scene)
+
+    control = JobControl()
+    concurrency = max(1, int(defaults.get("concurrency") or settings.default_concurrency))
+    workers = [
+        asyncio.create_task(
+            generation_worker(queue, pool, defaults, user_id, pid, job_id, control)
+        )
+        for _ in range(min(concurrency, len(runnable)))
+    ]
+
+    async def supervise() -> None:
         try:
-            projects_res = client.table("projects").select("id").in_("status", ["PENDING", "PROCESSING", "generating"]).execute()
-            if not projects_res.data:
-                return
-                
-            project_ids = [p["id"] for p in projects_res.data]
-            
-            for pid in project_ids:
-                pid_str = str(pid)
-                if pid_str not in active_jobs:
-                    scenes_res = client.table("scenes").select("*").eq("project_id", pid_str).in_("overall_status", ["pending", "generating", "PENDING", "PROCESSING", "VISUAL_GENERATING", "VOICE_GENERATING"]).execute()
-                    if scenes_res.data:
-                        logger.info(f"Recovering {len(scenes_res.data)} scenes for project {pid_str}")
-                        client.table("scenes").update({
-                            "overall_status": "FAILED",
-                            "error_message": "Server restarted during generation. Please retry."
-                        }).eq("project_id", pid_str).in_("overall_status", ["pending", "generating", "PENDING", "PROCESSING", "VISUAL_GENERATING", "VOICE_GENERATING"]).execute()
-                        
-                        client.table("projects").update({"status": "FAILED"}).eq("id", pid_str).execute()
-        except Exception as e:
-            logger.error(f"Failed to recover jobs: {e}")
+            await asyncio.gather(*workers, return_exceptions=True)
+        finally:
+            active_jobs.pop(pid, None)
+            await update_job_progress(job_id, pid)
+            if not control.stopping:
+                log_activity(pid, user_id, "INFO", "Batch generation finished")
+
+    active_jobs[pid] = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "control": control,
+        "workers": workers,
+        "task": asyncio.create_task(supervise()),
+        "started_at": _now_iso(),
+    }
+
+    return {"job_id": job_id, "status": "STARTED", "task_count": task_count, "scene_count": len(runnable)}
+
+
+async def pause_generation(project_id: Any, user_id: Optional[str] = None) -> bool:
+    """Stop scheduling new tasks; in-flight tasks finish and stay COMPLETED."""
+    pid = str(project_id)
+    job = active_jobs.get(pid)
+    if not job:
+        # Nothing running — still reflect the intent in the database.
+        await _pause_job_state(pid, None, user_id, "paused by user")
+        return False
+
+    job["control"].paused.set()
+    await _pause_job_state(pid, job.get("job_id"), job.get("user_id") or user_id, "paused by user")
+    return True
+
+
+async def cancel_generation(project_id: Any, user_id: Optional[str] = None) -> bool:
+    """Cancel remaining work. Completed assets are preserved (§39)."""
+    pid = str(project_id)
+    job = active_jobs.get(pid)
+    client = get_admin_client()
+
+    if job:
+        job["control"].cancelled.set()
+        for worker in job.get("workers", []):
+            worker.cancel()
+
+    task_service.cancel_open_tasks(pid)
+
+    if client:
+        try:
+            client.table("projects").update({"status": "CANCELLED"}).eq("id", pid).execute()
+            if job and job.get("job_id"):
+                client.table("generation_jobs").update(
+                    {"status": "CANCELLED", "completed_at": _now_iso()}
+                ).eq("id", job["job_id"]).execute()
+        except Exception as exc:
+            logger.error("Could not mark project %s cancelled: %s", pid, exc)
+
+    log_activity(pid, (job or {}).get("user_id") or user_id, "WARNING", "Generation cancelled by user")
+    active_jobs.pop(pid, None)
+    return bool(job)
+
+
+def is_running(project_id: Any) -> bool:
+    return str(project_id) in active_jobs
+
+
+async def recover_pending_jobs() -> None:
+    """On startup, no worker owns any task — re-open whatever was in flight (§38)."""
+    client = get_admin_client()
+    if not client:
+        logger.warning("No database client available; skipping job recovery")
+        return
+
+    async with recovery_lock:
+        try:
+            stuck = (
+                client.table("generation_tasks")
+                .select("id, scene_id, project_id")
+                .in_("status", [task_service.STATUS_PROCESSING, task_service.STATUS_RETRYING])
+                .execute()
+                .data
+                or []
+            )
+            if stuck:
+                logger.info("Recovering %d task(s) interrupted by a restart", len(stuck))
+                client.table("generation_tasks").update(
+                    {
+                        "status": task_service.STATUS_FAILED,
+                        "error_category": "INTERRUPTED",
+                        "error_message": "Server restarted during generation. Retry to continue.",
+                        "updated_at": _now_iso(),
+                    }
+                ).in_("id", [t["id"] for t in stuck]).execute()
+
+                for scene_id in {t["scene_id"] for t in stuck if t.get("scene_id")}:
+                    sync_scene_state(scene_id)
+
+            # Any job/project left mid-flight has no owner after a restart.
+            client.table("generation_jobs").update({"status": "PAUSED"}).eq("status", "PROCESSING").execute()
+            client.table("projects").update({"status": "PAUSED"}).eq("status", "PROCESSING").execute()
+        except Exception as exc:
+            logger.error("Job recovery failed: %s", exc)
+
+        await reconcile_missing_media()
+
+
+async def reconcile_missing_media() -> int:
+    """Drop completion state for assets whose files are no longer on disk.
+
+    Deployment targets with an ephemeral filesystem lose `output/` on every
+    restart while the database rows survive. Without this the UI would keep
+    showing a completed ✓ and a broken thumbnail for media that no longer
+    exists, which is exactly the false-completion the spec forbids (§34).
+    Affected tasks return to QUEUED so a resume regenerates them.
+    """
+    client = get_admin_client()
+    if not client:
+        return 0
+
+    try:
+        assets = client.table("assets").select("id, scene_id, asset_type, storage_path").execute().data or []
+    except Exception as exc:
+        logger.error("Could not read assets for reconciliation: %s", exc)
+        return 0
+
+    missing = [
+        asset for asset in assets
+        if not (lambda p: p and os.path.exists(p))(asset_service.local_path_for_url(asset.get("storage_path")))
+    ]
+    if not missing:
+        return 0
+
+    logger.warning("%d asset file(s) missing from storage; clearing their completion state", len(missing))
+    scene_ids = sorted({a["scene_id"] for a in missing if a.get("scene_id")})
+
+    try:
+        client.table("assets").delete().in_("id", [a["id"] for a in missing]).execute()
+
+        for asset in missing:
+            if not asset.get("scene_id"):
+                continue
+            task_type = {"image": task_service.TASK_IMAGE, "voiceover": task_service.TASK_VOICEOVER,
+                         "video": task_service.TASK_VIDEO, "merged": task_service.TASK_MERGE}.get(asset["asset_type"])
+            if not task_type:
+                continue
+            client.table("generation_tasks").update(
+                {
+                    "status": task_service.STATUS_QUEUED,
+                    "storage_path": None,
+                    "error_category": "MEDIA_MISSING",
+                    "error_message": "Stored file was lost (server restart). Queued for regeneration.",
+                    "updated_at": _now_iso(),
+                }
+            ).eq("scene_id", asset["scene_id"]).eq("task_type", task_type).execute()
+
+        for scene_id in scene_ids:
+            sync_scene_state(scene_id)
+    except Exception as exc:
+        logger.error("Media reconciliation failed: %s", exc)
+        return 0
+
+    return len(missing)

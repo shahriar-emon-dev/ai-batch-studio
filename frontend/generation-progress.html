@@ -3,73 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Batch Generation Progress - AI Content Studio</title>
+    <title>Batch Generation Progress - AI ContentStudio</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/env.js" defer></script>
+    <script src="/config.js" defer></script>
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
     <div class="app-layout">
-        <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="sidebar-brand">
-                AI Content <span>Studio</span>
-            </div>
+            <div class="sidebar-brand">AI Content <span>Studio</span></div>
             <nav class="sidebar-nav">
-                <a href="/dashboard.html" class="nav-item">
-                    <i>📊</i> Dashboard
-                </a>
-                <a href="/projects.html" class="nav-item">
-                    <i>📁</i> Projects
-                </a>
-                <a href="/generation-progress.html" class="nav-item active">
-                    <i>⚡</i> Batch Generation
-                </a>
-                <a href="/assets.html" class="nav-item">
-                    <i>🖼️</i> Asset Browser
-                </a>
-                <a href="/export.html" class="nav-item">
-                    <i>📦</i> Selective Export
-                </a>
+                <a href="/dashboard.html" class="nav-item"><i>📊</i> Dashboard</a>
+                <a href="/projects.html" class="nav-item"><i>📁</i> Projects</a>
+                <a href="/generation-progress.html" class="nav-item active"><i>⚡</i> Batch Generation</a>
+                <a href="/assets.html" class="nav-item"><i>🖼️</i> Asset Browser</a>
+                <a href="/export.html" class="nav-item"><i>📦</i> Selective Export</a>
             </nav>
             <div class="sidebar-footer">
-                <a href="/settings.html" class="nav-item">
-                    <i>⚙️</i> Settings
-                </a>
-                <a href="#" id="logoutBtn" class="nav-item">
-                    <i>🚪</i> Logout
-                </a>
+                <a href="/settings.html" class="nav-item"><i>⚙️</i> Settings</a>
+                <a href="#" id="logoutBtn" class="nav-item"><i>🚪</i> Logout</a>
             </div>
         </aside>
 
-        <!-- Main Content -->
         <main class="main-content">
             <header class="topbar">
                 <div class="page-title" id="jobTitle">Batch Generation Progress</div>
                 <div class="user-menu">
-                    <span id="userEmail">Loading...</span>
+                    <select id="projectPicker" class="form-control" style="width: auto; padding: 0.35rem;"></select>
+                    <span id="userEmail">Loading…</span>
                 </div>
             </header>
 
             <div class="page-container">
-                <!-- Controls & Progress Banner -->
+                <!-- Why generation is blocked, stated plainly instead of only in the log. -->
+                <div id="blockerBanner" class="glass-panel mb-4 hidden"
+                     style="padding: 1.25rem; border-left: 4px solid var(--accent-red, #f87171);">
+                    <strong id="blockerTitle" class="text-danger">Generation blocked</strong>
+                    <p class="text-muted mt-1" id="blockerMessage" style="font-size: 0.88rem;"></p>
+                    <p class="mt-2" id="blockerAction" style="font-size: 0.88rem;"></p>
+                </div>
+
                 <div class="glass-panel mb-4" style="padding: 1.5rem;">
                     <div class="flex justify-between items-center mb-4">
                         <div>
-                            <h2 id="projNameHeading">Project Generation</h2>
-                            <p class="text-muted mt-1" id="jobStatusText">Status: Idle</p>
+                            <h2 id="projNameHeading">Project generation</h2>
+                            <p class="text-muted mt-1" id="jobStatusText">Status: idle</p>
                         </div>
                         <div class="flex gap-2">
+                            <button id="btnStart" class="btn btn-primary" style="display:none;">▶ Start</button>
                             <button id="btnPause" class="btn btn-secondary">⏸ Pause</button>
                             <button id="btnResume" class="btn btn-primary" style="display:none;">▶ Resume</button>
                             <button id="btnRetryFailed" class="btn btn-secondary">🔄 Retry Failed</button>
-                            <button id="btnDownloadReport" class="btn btn-secondary">📄 Download Report</button>
-                            <button id="btnCancel" class="btn btn-danger">⏹ Cancel Job</button>
+                            <button id="btnDownloadReport" class="btn btn-secondary">📄 Report</button>
+                            <button id="btnCancel" class="btn btn-danger">⏹ Cancel</button>
                         </div>
                     </div>
 
-                    <!-- Overall Progress Bar -->
                     <div class="flex justify-between items-center mb-2">
                         <strong>Overall Progress</strong>
                         <span id="progressPctText" class="font-mono" style="font-size: 1.1rem; font-weight:700; color:var(--primary);">0%</span>
@@ -78,37 +71,35 @@
                         <div id="progressFill" class="progress-bar-fill" style="width: 0%;"></div>
                     </div>
 
-                    <!-- Speed & ETA Banner -->
                     <div class="flex justify-between text-muted" style="font-size:0.85rem; border-top: 1px solid var(--border-glass); padding-top: 0.75rem;">
-                        <span>🚀 <strong>Speed:</strong> <span id="genSpeedText">Calculating...</span></span>
-                        <span>⏱️ <strong>Estimated Remaining Time (ETA):</strong> <span id="etaText">Calculating...</span></span>
-                        <span>📦 <strong>Tasks Completed:</strong> <span id="progressCountText">0 / 0</span></span>
+                        <span>🚀 <strong>Speed:</strong> <span id="genSpeedText">—</span></span>
+                        <span>⏱️ <strong>ETA:</strong> <span id="etaText">—</span></span>
+                        <span>📦 <strong>Tasks:</strong> <span id="progressCountText">0 / 0</span></span>
+                        <span>⏳ <strong>Pending:</strong> <span id="pendingCountText">0</span></span>
                     </div>
                 </div>
 
-                <!-- Currently Processing Active Card -->
                 <div class="glass-card mb-4" style="padding: 1.25rem; border-left: 4px solid var(--primary);">
                     <div class="flex items-center gap-md">
-                        <div style="font-size: 1.5rem;" id="processingIcon">⚡</div>
+                        <div style="font-size: 1.5rem;" id="processingIcon">💤</div>
                         <div>
                             <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;" class="text-muted">Currently Processing</div>
-                            <h3 id="currentProcessingText" style="font-size: 1.1rem; margin-top: 0.25rem;">Idle — Waiting for generation pipeline to start</h3>
+                            <h3 id="currentProcessingText" style="font-size: 1.1rem; margin-top: 0.25rem;">Idle — waiting for the generation pipeline</h3>
                         </div>
                     </div>
                 </div>
 
-                <!-- Media Breakdown Stats Grid -->
                 <div class="stats-grid mb-4">
                     <div class="stat-card blue">
-                        <div class="stat-label">🖼️ Images Generated</div>
+                        <div class="stat-label">🖼️ Images</div>
                         <div class="stat-value blue" id="statImages">0 / 0</div>
                     </div>
                     <div class="stat-card purple">
-                        <div class="stat-label">🎙️ Voiceovers Generated</div>
+                        <div class="stat-label">🎙️ Voiceovers</div>
                         <div class="stat-value purple" id="statVoiceovers">0 / 0</div>
                     </div>
                     <div class="stat-card green">
-                        <div class="stat-label">🎬 Videos Merged</div>
+                        <div class="stat-label">🎬 Videos</div>
                         <div class="stat-value green" id="statVideos">0 / 0</div>
                     </div>
                     <div class="stat-card red">
@@ -117,257 +108,350 @@
                     </div>
                 </div>
 
-                <!-- Scene Breakdown Table -->
-                <div class="glass-panel" style="padding: 1.5rem;">
-                    <h3>Live Scene Pipeline Breakdown</h3>
-                    <div class="table-container mt-4">
+                <div class="glass-panel mb-4" style="padding: 1.5rem;">
+                    <div class="flex justify-between items-center">
+                        <h3>Task Monitor</h3>
+                        <select id="taskFilter" class="form-control" style="width: auto; padding: 0.35rem;">
+                            <option value="">All tasks</option>
+                            <option value="PROCESSING">Processing</option>
+                            <option value="COMPLETED">Completed</option>
+                            <option value="FAILED">Failed</option>
+                            <option value="QUEUED">Queued</option>
+                            <option value="UNSUPPORTED">Unsupported</option>
+                        </select>
+                    </div>
+                    <div class="table-container mt-4" style="max-height: 380px; overflow: auto;">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>#</th>
-                                    <th>Visual Prompt</th>
-                                    <th>Image Status</th>
-                                    <th>Voiceover Status</th>
-                                    <th>Overall Status</th>
-                                    <th>Diagnostics / Error</th>
+                                    <th>Scene</th>
+                                    <th>Asset</th>
+                                    <th>Status</th>
+                                    <th>Attempts</th>
+                                    <th>Output</th>
+                                    <th>Diagnostics</th>
+                                    <th></th>
                                 </tr>
                             </thead>
-                            <tbody id="progressTableBody">
-                                <tr><td colspan="6" class="text-muted text-center">Loading live progress...</td></tr>
+                            <tbody id="taskTableBody">
+                                <tr><td colspan="7" class="text-muted">Loading tasks…</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
+                <div class="glass-panel" style="padding: 1.5rem;">
+                    <h3>Activity Log</h3>
+                    <div id="activityLog" style="max-height: 260px; overflow:auto; margin-top: 1rem; font-size: 0.85rem;">
+                        <p class="text-muted">No activity yet.</p>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
 
     <script>
         let currentProjectId = null;
-        let pollInterval = null;
-        let jobStartTime = null;
         let currentJobId = null;
+        let jobStartTime = null;
+        let taskFilter = '';
+        let inFlight = false;
 
         document.addEventListener('DOMContentLoaded', async () => {
-            const user = await Auth.requireAuth();
+            const user = await Shell.init();
             if (!user) return;
 
-            document.getElementById('userEmail').textContent = user.email;
+            currentProjectId = new URLSearchParams(window.location.search).get('project_id');
+            await buildProjectPicker();
+            if (!currentProjectId) return;
 
-            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                await Auth.signOut();
-                window.location.href = '/login.html';
-            });
+            bindControls();
+            await refresh();
 
-            const urlParams = new URLSearchParams(window.location.search);
-            currentProjectId = urlParams.get('project_id');
+            // Realtime pushes the update; polling is the safety net (§37).
+            Live.subscribe(currentProjectId, () => refresh(), { pollMs: 4000 });
+        });
 
-            if (!currentProjectId) {
-                try {
-                    const projects = await API.get('/api/projects');
-                    if (projects && projects.length > 0) {
-                        currentProjectId = projects[0].id;
-                    } else {
-                        window.location.href = '/projects.html';
-                        return;
-                    }
-                } catch(e) {
-                    window.location.href = '/projects.html';
+        async function buildProjectPicker() {
+            const picker = document.getElementById('projectPicker');
+            try {
+                const projects = await API.get('/api/projects');
+                if (!projects.length) {
+                    picker.innerHTML = '<option>No projects</option>';
+                    Toast.info('Create a project first.');
+                    setTimeout(() => { window.location.href = '/projects.html'; }, 1200);
                     return;
                 }
+                if (!currentProjectId) currentProjectId = String(projects[0].id);
+                picker.innerHTML = projects.map(p =>
+                    `<option value="${p.id}" ${String(p.id) === String(currentProjectId) ? 'selected' : ''}>${Fmt.esc(p.name)}</option>`
+                ).join('');
+                picker.onchange = () => { window.location.href = `/generation-progress.html?project_id=${picker.value}`; };
+            } catch (err) {
+                Toast.error(`Could not load projects: ${err.message}`);
             }
+        }
 
-            async function updateProgress() {
-                try {
-                    // 1. Fetch active job status
-                    const activeJob = await API.get(`/api/generation/active/${currentProjectId}`);
-                    if (activeJob && activeJob.id) {
-                        currentJobId = activeJob.id;
-                        if (activeJob.started_at && !jobStartTime) {
-                            jobStartTime = new Date(activeJob.started_at).getTime();
-                        }
-                    }
+        function bindControls() {
+            const target = () => currentJobId || currentProjectId;
 
-                    // 2. Fetch project & scenes
-                    const project = await API.get(`/api/projects/${currentProjectId}`);
-                    document.getElementById('projNameHeading').textContent = project.name;
-                    
-                    const jobStatus = activeJob.status || project.status || 'PENDING';
-                    document.getElementById('jobStatusText').textContent = `Status: ${jobStatus}`;
-
-                    const scenes = project.scenes || [];
-                    const totalScenes = scenes.length;
-
-                    // Calculate granular image & voiceover metrics directly from scenes
-                    const completedImages = scenes.filter(s => s.visual_status === 'VISUAL_COMPLETED' || s.overall_status === 'COMPLETED').length;
-                    const completedVoiceovers = scenes.filter(s => s.voice_status === 'VOICE_COMPLETED' || s.overall_status === 'COMPLETED').length;
-                    const completedVideos = scenes.filter(s => s.merged_path || s.overall_status === 'COMPLETED').length;
-
-                    const completedScenes = scenes.filter(s => s.overall_status === 'COMPLETED').length;
-                    const failedScenes = scenes.filter(s => s.overall_status === 'FAILED' || s.visual_status === 'FAILED' || s.voice_status === 'FAILED').length;
-                    const processingScenes = scenes.filter(s => 
-                        s.overall_status === 'PROCESSING' || 
-                        s.visual_status === 'VISUAL_GENERATING' || 
-                        s.voice_status === 'VOICE_GENERATING'
-                    );
-
-                    const totalTasks = totalScenes * 2; // Image + Voiceover per scene
-                    const totalCompletedTasks = completedImages + completedVoiceovers;
-
-                    const pct = totalTasks > 0 ? Math.round((totalCompletedTasks / totalTasks) * 100) : 0;
-
-                    document.getElementById('progressFill').style.width = `${pct}%`;
-                    document.getElementById('progressPctText').textContent = `${pct}%`;
-                    document.getElementById('progressCountText').textContent = `${completedScenes} / ${totalScenes} Scenes`;
-
-                    document.getElementById('statImages').textContent = `${completedImages} / ${totalScenes}`;
-                    document.getElementById('statVoiceovers').textContent = `${completedVoiceovers} / ${totalScenes}`;
-                    document.getElementById('statVideos').textContent = `${completedVideos} / ${totalScenes}`;
-                    document.getElementById('statFailed').textContent = failedScenes;
-
-                    // Currently Processing Card Indicator
-                    const iconEl = document.getElementById('processingIcon');
-                    const textEl = document.getElementById('currentProcessingText');
-
-                    if (processingScenes.length > 0) {
-                        const activeScene = processingScenes[0];
-                        if (activeScene.visual_status === 'VISUAL_GENERATING') {
-                            iconEl.textContent = '🖼️';
-                            textEl.textContent = `Scene ${activeScene.scene_number || activeScene.id} — Generating Image...`;
-                        } else if (activeScene.voice_status === 'VOICE_GENERATING') {
-                            iconEl.textContent = '🎙️';
-                            textEl.textContent = `Scene ${activeScene.scene_number || activeScene.id} — Generating Voiceover...`;
-                        } else {
-                            iconEl.textContent = '⚡';
-                            textEl.textContent = `Scene ${activeScene.scene_number || activeScene.id} — Processing Media Pipeline...`;
-                        }
-                    } else if (jobStatus === 'COMPLETED') {
-                        iconEl.textContent = '✅';
-                        textEl.textContent = 'All scenes generated successfully!';
-                    } else if (jobStatus === 'PAUSED') {
-                        iconEl.textContent = '⏸️';
-                        textEl.textContent = 'Generation pipeline paused by user';
-                    } else if (jobStatus === 'FAILED') {
-                        iconEl.textContent = '⚠️';
-                        textEl.textContent = 'Pipeline stopped due to errors. Click "Retry Failed" to continue.';
-                    } else {
-                        iconEl.textContent = '💤';
-                        textEl.textContent = 'Idle — Waiting for generation pipeline to start';
-                    }
-
-                    // Speed & ETA Calculations
-                    if (jobStartTime && totalCompletedTasks > 0 && (jobStatus === 'PROCESSING' || jobStatus === 'generating')) {
-                        const elapsedMins = (Date.now() - jobStartTime) / 60000;
-                        const speed = elapsedMins > 0 ? (totalCompletedTasks / elapsedMins).toFixed(1) : '0';
-                        document.getElementById('genSpeedText').textContent = `${speed} files / min`;
-
-                        const remainingTasks = totalTasks - totalCompletedTasks;
-                        const remainingMins = speed > 0 ? Math.ceil(remainingTasks / speed) : 0;
-                        document.getElementById('etaText').textContent = remainingMins > 0 ? `~${remainingMins} min remaining` : 'Completing...';
-                    } else if (jobStatus === 'COMPLETED') {
-                        document.getElementById('genSpeedText').textContent = 'Finished';
-                        document.getElementById('etaText').textContent = 'Completed';
-                    } else {
-                        document.getElementById('genSpeedText').textContent = 'Ready';
-                        document.getElementById('etaText').textContent = 'Waiting...';
-                    }
-
-                    // Update Breakdown Table
-                    const tbody = document.getElementById('progressTableBody');
-                    if (scenes.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No scenes in project workspace.</td></tr>';
-                    } else {
-                        tbody.innerHTML = scenes.map((s, idx) => `
-                            <tr>
-                                <td class="font-mono">${s.scene_number || (idx + 1)}</td>
-                                <td class="truncate" style="max-width:250px;" title="${s.visual_prompt}">${s.visual_prompt || '—'}</td>
-                                <td><span class="badge ${
-                                    s.visual_status === 'VISUAL_COMPLETED' ? 'badge-success' : 
-                                    s.visual_status === 'VISUAL_GENERATING' ? 'badge-warning' : 
-                                    s.visual_status === 'UNSUPPORTED' ? 'badge-unsupported' :
-                                    s.visual_status === 'FAILED' ? 'badge-danger' : 'badge-secondary'
-                                }">${s.visual_status || 'PENDING'}</span></td>
-                                <td><span class="badge ${s.voice_status === 'VOICE_COMPLETED' ? 'badge-success' : s.voice_status === 'VOICE_GENERATING' ? 'badge-warning' : 'badge-secondary'}">${s.voice_status || 'PENDING'}</span></td>
-                                <td><span class="badge ${
-                                    s.overall_status === 'COMPLETED' ? 'badge-success' : 
-                                    s.overall_status === 'FAILED' ? 'badge-danger' : 
-                                    s.overall_status === 'PROCESSING' ? 'badge-warning' : 
-                                    s.overall_status === 'SKIPPED' ? 'badge-secondary' : 
-                                    s.overall_status === 'UNSUPPORTED' ? 'badge-secondary' : 'badge-secondary'
-                                }">${s.overall_status || 'PENDING'}</span></td>
-                                <td class="truncate" style="max-width:200px;">
-                                    ${s.error_message ? `<span class="text-danger">${s.error_message}</span>` : s.merged_path ? `<span class="text-muted">${s.merged_path}</span>` : '—'}
-                                </td>
-                            </tr>
-                        `).join('');
-                    }
-
-                    // Button controls visibility
-                    const isPaused = (jobStatus === 'PAUSED');
-                    document.getElementById('btnPause').style.display = isPaused ? 'none' : 'inline-flex';
-                    document.getElementById('btnResume').style.display = isPaused ? 'inline-flex' : 'none';
-
-                } catch(e) {
-                    console.error("Progress update error:", e);
-                }
-            }
-
-            // Bind Control Actions
-            document.getElementById('btnPause').onclick = async () => {
-                try {
-                    const targetId = currentJobId || currentProjectId;
-                    await API.post(`/api/generation/${targetId}/pause`, {});
-                    Toast.info('Job pause signal sent');
-                    updateProgress();
-                } catch(e) { Toast.error(e.message); }
+            document.getElementById('btnStart').onclick = () => act(
+                () => API.post('/api/generation/start', { project_id: String(currentProjectId) }),
+                'Generation started'
+            );
+            document.getElementById('btnPause').onclick = () => act(
+                () => API.post(`/api/generation/${target()}/pause`, {}), 'Pause requested'
+            );
+            document.getElementById('btnResume').onclick = () => act(
+                () => API.post(`/api/generation/${target()}/resume`, {}), 'Generation resumed'
+            );
+            document.getElementById('btnRetryFailed').onclick = () => act(
+                () => API.post(`/api/generation/${target()}/retry`, {}), 'Retrying failed tasks'
+            );
+            document.getElementById('btnCancel').onclick = () => {
+                if (!confirm('Cancel this generation job? Completed assets are preserved.')) return;
+                act(() => API.post(`/api/generation/${target()}/cancel`, {}), 'Job cancelled');
             };
-
-            document.getElementById('btnResume').onclick = async () => {
-                try {
-                    const targetId = currentJobId || currentProjectId;
-                    await API.post(`/api/generation/${targetId}/resume`, {});
-                    Toast.success('Job resumed');
-                    updateProgress();
-                } catch(e) { Toast.error(e.message); }
-            };
-
-            document.getElementById('btnRetryFailed').onclick = async () => {
-                try {
-                    const targetId = currentJobId || currentProjectId;
-                    await API.post(`/api/generation/${targetId}/retry`, {});
-                    Toast.info('Retrying failed scenes...');
-                    updateProgress();
-                } catch(e) { Toast.error(e.message); }
-            };
-
             document.getElementById('btnDownloadReport').onclick = async () => {
                 try {
-                    const res = await API.get(`/api/files/report/${currentProjectId}`);
+                    const result = await API.get(`/api/files/report/${currentProjectId}`);
                     const link = document.createElement('a');
-                    link.href = res.download_url;
+                    link.href = Fmt.media(result.download_url);
                     link.download = '';
+                    document.body.appendChild(link);
                     link.click();
-                    Toast.success(`Report ready — ${res.scene_count} scenes exported`);
-                } catch(e) {
-                    Toast.error(`Report failed: ${e.message}`);
+                    link.remove();
+                    Toast.success(`Report ready — ${result.scene_count} scenes.`);
+                } catch (err) { Toast.error(`Report failed: ${err.message}`); }
+            };
+            document.getElementById('taskFilter').onchange = (e) => {
+                taskFilter = e.target.value;
+                loadTasks();
+            };
+        }
+
+        async function act(operation, successMessage) {
+            try {
+                const result = await operation();
+                Toast.success(result?.message || successMessage);
+            } catch (err) {
+                Toast.error(err.message);
+            } finally {
+                refresh(true);
+            }
+        }
+
+        // Signature of the last render. The task table and activity feed are the
+        // two expensive calls, so while a poll shows no change we skip them and
+        // the steady-state cost drops from three requests per tick to one.
+        let lastSignature = null;
+
+        async function refresh(force = false) {
+            if (inFlight) return;
+            inFlight = true;
+            try {
+                const data = await API.get(`/api/generation/progress/${currentProjectId}`);
+                render(data);
+
+                const o = data.overall || {};
+                const signature = [o.total, o.completed, o.failed, o.processing, o.pending,
+                                   o.unsupported, o.cancelled, data.status, data.worker_active].join('|');
+                if (force || signature !== lastSignature) {
+                    lastSignature = signature;
+                    await Promise.all([loadTasks(), loadActivity(), loadBlocker(data)]);
                 }
-            };
+            } catch (err) {
+                document.getElementById('jobStatusText').textContent = `Status unavailable: ${err.message}`;
+            } finally {
+                inFlight = false;
+            }
+        }
 
-            document.getElementById('btnCancel').onclick = async () => {
-                if (!confirm('Are you sure you want to cancel this generation job?')) return;
-                try {
-                    const targetId = currentJobId || currentProjectId;
-                    await API.post(`/api/generation/${targetId}/cancel`, {});
-                    Toast.warning('Job cancelled');
-                    updateProgress();
-                } catch(e) { Toast.error(e.message); }
-            };
+        function render(data) {
+            currentJobId = data.job?.id || null;
+            const status = data.status || 'IDLE';
 
-            updateProgress();
-            pollInterval = setInterval(updateProgress, 1500);
-        });
+            document.getElementById('projNameHeading').textContent = data.project?.name || 'Project';
+            document.getElementById('jobStatusText').innerHTML =
+                `Status: ${Status.badge(status)}${data.worker_active ? ' <span class="text-muted">· worker running</span>' : ''}`;
+
+            const overall = data.overall || {};
+            const done = (overall.completed || 0) + (overall.unsupported || 0) + (overall.skipped || 0);
+
+            document.getElementById('progressFill').style.width = `${data.percent || 0}%`;
+            document.getElementById('progressPctText').textContent = `${data.percent || 0}%`;
+            document.getElementById('progressCountText').textContent = `${done} / ${overall.total || 0}`;
+            document.getElementById('pendingCountText').textContent = overall.pending || 0;
+
+            const part = (bucket) => `${bucket?.completed || 0} / ${bucket?.total || 0}`;
+            document.getElementById('statImages').textContent = part(data.images);
+            document.getElementById('statVoiceovers').textContent = part(data.voiceovers);
+            const videoTotal = (data.videos?.total || 0) + (data.merges?.total || 0);
+            const videoDone = (data.videos?.completed || 0) + (data.merges?.completed || 0);
+            document.getElementById('statVideos').textContent = `${videoDone} / ${videoTotal}`;
+            document.getElementById('statFailed').textContent = overall.failed || 0;
+
+            // Currently processing (§35) — read from live task rows, never guessed.
+            const processing = data.currently_processing || [];
+            const icon = document.getElementById('processingIcon');
+            const text = document.getElementById('currentProcessingText');
+            if (processing.length) {
+                const first = processing[0];
+                icon.textContent = first.task_type === 'voiceover' ? '🎙️' : first.task_type === 'video' ? '🎬' : first.task_type === 'merge' ? '🎞️' : '🖼️';
+                text.textContent = `Scene ${first.scene_number} — generating ${first.task_type}` +
+                    (processing.length > 1 ? ` (+${processing.length - 1} more in flight)` : '');
+            } else if (status === 'COMPLETED') {
+                icon.textContent = '✅';
+                text.textContent = 'All tasks finished.';
+            } else if (status === 'PAUSED') {
+                icon.textContent = '⏸️';
+                text.textContent = 'Paused — press Resume to continue.';
+            } else if (status === 'FAILED') {
+                icon.textContent = '⚠️';
+                text.textContent = 'Stopped with failures. Use Retry Failed to continue.';
+            } else {
+                icon.textContent = '💤';
+                text.textContent = 'Idle — waiting for the generation pipeline.';
+            }
+
+            // Controls reflect real backend state. Readiness comes from scenes
+            // that still need work — tasks only exist after a job has started,
+            // so using task counts here would hide Start on a fresh project.
+            const running = !!data.worker_active;
+            const scenes = data.scenes || {};
+            const canStart = data.can_start ?? (!running && (scenes.pending || 0) > 0);
+            const everRan = !!data.job;
+
+            document.getElementById('btnStart').style.display =
+                canStart && !everRan ? 'inline-flex' : 'none';
+            document.getElementById('btnResume').style.display =
+                canStart && everRan ? 'inline-flex' : 'none';
+            document.getElementById('btnPause').style.display = running ? 'inline-flex' : 'none';
+            document.getElementById('btnCancel').disabled = !running;
+            document.getElementById('btnRetryFailed').disabled = (overall.failed || 0) === 0;
+
+            // Before the first run there are no tasks, so report scene readiness
+            // rather than a bare "0 / 0" that looks like nothing to do.
+            if (!overall.total && scenes.total) {
+                document.getElementById('progressCountText').textContent =
+                    `${scenes.total} scene(s) ready — not yet queued`;
+            }
+
+            // Throughput measured from real job timings.
+            const startedAt = data.job?.started_at;
+            jobStartTime = startedAt ? new Date(startedAt).getTime() : null;
+            if (jobStartTime && done > 0 && running) {
+                const minutes = (Date.now() - jobStartTime) / 60000;
+                const rate = minutes > 0 ? done / minutes : 0;
+                document.getElementById('genSpeedText').textContent = `${rate.toFixed(1)} tasks/min`;
+                const remaining = (overall.total || 0) - done;
+                document.getElementById('etaText').textContent =
+                    rate > 0 ? `~${Math.max(1, Math.ceil(remaining / rate))} min remaining` : 'Calculating…';
+            } else {
+                document.getElementById('genSpeedText').textContent = running ? 'Starting…' : '—';
+                document.getElementById('etaText').textContent = status === 'COMPLETED' ? 'Completed' : '—';
+            }
+        }
+
+        async function loadTasks() {
+            try {
+                const tasks = await API.get(`/api/generation/tasks/${currentProjectId}` + API.qs({ status: taskFilter }));
+                const body = document.getElementById('taskTableBody');
+                if (!tasks.length) {
+                    body.innerHTML = '<tr><td colspan="7" class="text-muted">No tasks match this filter.</td></tr>';
+                    return;
+                }
+                body.innerHTML = tasks.map(t => `
+                    <tr>
+                        <td class="font-mono">${Fmt.esc(t.scene_number || t.scene_id)}</td>
+                        <td><span class="badge badge-secondary">${Fmt.esc(t.task_type)}</span></td>
+                        <td>${Status.badge(t.status)}</td>
+                        <td class="text-muted">${t.attempt_count || 0} / ${t.max_attempts || 3}</td>
+                        <td class="truncate" style="max-width:180px;">
+                            ${t.storage_path ? `<a href="${Fmt.esc(Fmt.media(t.storage_path))}" target="_blank">${Fmt.esc(t.storage_path.split('/').pop())}</a>` : '—'}
+                        </td>
+                        <td class="truncate text-danger" style="max-width:260px;" title="${Fmt.esc(t.error_message)}">
+                            ${Fmt.esc(Fmt.truncate(t.error_message, 60)) || ''}
+                        </td>
+                        <td>
+                            ${t.status === 'FAILED' ? `<button class="btn btn-ghost btn-sm" onclick="retryScene(${t.scene_id})">🔄</button>` : ''}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                document.getElementById('taskTableBody').innerHTML =
+                    `<tr><td colspan="7" class="text-danger">${Fmt.esc(err.message)}</td></tr>`;
+            }
+        }
+
+        window.retryScene = async (sceneId) => {
+            try {
+                await API.post(`/api/generation/scenes/${sceneId}/retry`, {});
+                Toast.success('Scene requeued.');
+                refresh(true);
+            } catch (err) { Toast.error(err.message); }
+        };
+
+        // Turns the newest classified error into a plain statement of what is
+        // wrong and what to do about it, instead of leaving the user to infer it
+        // from a PAUSED badge.
+        const BLOCKER_ADVICE = {
+            QUOTA_EXCEEDED: 'This Google project has no remaining quota for that model. Image generation has no free tier — enable billing on the Google Cloud project behind this API key, then press Resume.',
+            RATE_LIMITED: 'Too many requests in a short window. Generation resumes automatically once the cooldown expires, or add a second API profile in Settings to rotate.',
+            INVALID_API_KEY: 'The API key was rejected. Re-test it in Settings and replace it if needed.',
+            UNSUPPORTED: 'This model or feature is not enabled for the account. Images and voiceovers are unaffected by video/merge being unsupported.',
+            STORAGE_ERROR: 'The generated file could not be written or verified on the server.',
+            MEDIA_MISSING: 'Previously generated files are gone (the server restarted). The affected tasks were requeued.',
+            NETWORK_ERROR: 'The provider could not be reached. Retry once connectivity is restored.',
+            TIMEOUT: 'The provider did not respond in time. Retrying usually clears this.',
+        };
+
+        async function loadBlocker(data) {
+            const banner = document.getElementById('blockerBanner');
+            const failed = (data.overall?.failed || 0) > 0;
+            const stalled = ['PAUSED', 'FAILED'].includes(String(data.status || '').toUpperCase());
+
+            if (!failed && !stalled) {
+                banner.classList.add('hidden');
+                return;
+            }
+
+            try {
+                const errors = await API.get(`/api/generation/errors/${currentProjectId}` + API.qs({ limit: 1 }));
+                if (!errors.length) { banner.classList.add('hidden'); return; }
+
+                const err = errors[0];
+                document.getElementById('blockerTitle').textContent =
+                    `Generation blocked — ${err.error_category || 'error'}`;
+                document.getElementById('blockerMessage').textContent = err.error_message || '';
+                document.getElementById('blockerAction').textContent =
+                    BLOCKER_ADVICE[err.error_category] || 'Check the task monitor below for the affected scenes.';
+                banner.classList.remove('hidden');
+            } catch {
+                banner.classList.add('hidden');
+            }
+        }
+
+        async function loadActivity() {
+            try {
+                const entries = await API.get(`/api/generation/logs/${currentProjectId}` + API.qs({ limit: 60 }));
+                const log = document.getElementById('activityLog');
+                if (!entries.length) {
+                    log.innerHTML = '<p class="text-muted">No activity yet.</p>';
+                    return;
+                }
+                const colour = { SUCCESS: 'var(--accent-green, #4ade80)', ERROR: 'var(--accent-red, #f87171)', WARNING: 'var(--accent-amber, #fbbf24)' };
+                log.innerHTML = entries.map(entry => `
+                    <div style="padding: 0.3rem 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <span class="text-muted font-mono">${Fmt.time(entry.timestamp)}</span>
+                        <span style="color: ${colour[entry.level] || 'inherit'}; margin-left: 0.5rem;">${Fmt.esc(entry.message)}</span>
+                    </div>
+                `).join('');
+                log.scrollTop = log.scrollHeight;
+            } catch {
+                /* activity feed is non-critical */
+            }
+        }
     </script>
 </body>
 </html>

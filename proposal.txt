@@ -1,959 +1,1793 @@
-Automated AI Image, Video & Voiceover Generation Platform
-Document Type: Project Proposal & Software Requirements Specification
-Version: 1.0
-Date: August 11, 2026
-Status: Final
+AI ContentStudio
+Intelligent CSV-Driven AI Image, Voiceover & Video Batch Generation Platform
 
-TABLE OF CONTENTS
-Executive Summary
 
-Project Overview
 
-Problem Statement
+Document Type: Complete Project Proposal + Software Requirements Specification (SRS) + Technical Architecture + Functional Specification
 
-Proposed Solution
 
-Project Objectives
+Intended Developer/AI Agent: Claude Opus 5
 
-Project Scope
-
-Out of Scope
-
-Target Users
-
-Core Use Case
-
-Complete System Workflow
-
-Functional Requirements
-
-Non‑Functional Requirements
-
-System Architecture
-
-Technology Stack
-
-Authentication & User Management
-
-API Key Management
-
-CSV Processing System
-
-AI Generation Engine
-
-Voiceover Generation
-
-Batch Processing & Job Queue
-
-Progress Tracking
-
-Retry & Recovery
-
-File Management
-
-Export System
-
-Project Management
-
-Database Design
-
-API Specification
-
-Frontend Requirements
-
-Backend Requirements
-
-Security Requirements
-
-Multi‑User Architecture
-
-Error Handling
-
-Logging & Monitoring
-
-Local Development
-
-Production Deployment
-
-Environment Configuration
-
-Testing Requirements
-
-Acceptance Criteria
-
-Future Expansion
-
-Development Phases
-
-Definition of Done
-
-Master Instructions for Implementation
-
-1. EXECUTIVE SUMMARY
-AI Content Studio is a web‑based platform that automates the generation of large‑scale AI‑created visual and audio content. The primary workflow is:
-
-text
-CSV File
-   ↓
-CSV Validation
-   ↓
-Scene/Prompt Import
-   ↓
-Project Creation
-   ↓
-Batch Generation
-   ↓
-AI Image / Video Generation
-   ↓
-AI Voiceover Generation
-   ↓
-File Storage
-   ↓
-Progress Tracking
-   ↓
-Retry / Resume
-   ↓
-File Selection
-   ↓
-Export
-The system targets users who need to produce hundreds or thousands of AI‑generated assets without manually entering prompts one by one. The user prepares a structured CSV file containing scene information such as Scene ID, visual prompt, voiceover script, filename, aspect ratio, and optional generation settings. Each row becomes an individual generation task.
-
-The application supports user registration and login (via Supabase), multiple projects, CSV upload and validation, bulk generation of images and videos (where supported by Google AI APIs), voiceover generation, secure API‑key management, background jobs, retry and resume logic, progress tracking, file management, selective export (ZIP), and full multi‑user isolation with persistent job state.
+1. PROJECT TITLE
+AI ContentStudio — Intelligent CSV-Driven AI Image, Voiceover & Video Batch Generation Platform
 
 2. PROJECT OVERVIEW
-2.1 Project Name
-AI Content Studio
-(Alternative internal name: AI Bulk Content Generator)
+AI ContentStudio is a web-based AI content production platform designed to automate the generation of large numbers of visual and audio assets from structured or semi-structured CSV files.
 
-2.2 Project Type
-A cloud‑ready, Software‑as‑a‑Service (SaaS)‑style web application.
+The primary purpose of the system is to allow a user to upload a CSV containing content-generation information such as:
 
-2.3 Primary Purpose
-To convert structured content instructions (CSV rows) into actual AI‑generated media at scale:
+Scene information
+Image prompts
+Video prompts
+Voiceover scripts
+Tone, Voice, Duration, Aspect ratio, Style
+Character information, Camera instructions, Lighting
+Master prompts, Negative prompts, Filenames, Media types
+Other custom metadata
+The system must intelligently understand the uploaded CSV even when the column names or structure are not exactly predefined. The application should automatically:
 
-text
-500 CSV rows
-      ↓
-500 visual generation tasks
-      +
-500 voiceover tasks
-      ↓
-1 000+ AI operations
-      ↓
-Organized content library
-3. PROBLEM STATEMENT
-Manual AI content generation is time‑consuming and impractical for large projects. A typical manual workflow requires the user to:
+CSV Upload
+  ↓
+CSV Analysis
+  ↓
+Column Detection
+  ↓
+Intelligent Column Mapping
+  ↓
+Data Normalization
+  ↓
+Scene Creation
+  ↓
+Generation Task Creation
+  ↓
+AI Image / Voiceover / Video Generation
+  ↓
+External Media Storage
+  ↓
+Metadata + Status → Supabase
+  ↓
+Real-Time Progress
+  ↓
+Asset Browser
+  ↓
+Selective Export
+3. MAIN OBJECTIVE
+The main objective is to build a fully functional, automated, dynamic AI content generation platform. The application must not simply provide a visually attractive interface. Every important operation must actually work through the complete system:
 
-Read a script.
+Frontend
+  ↓
+FastAPI
+  ↓
+Business Logic
+  ↓
+Supabase
+  ↓
+Generation Worker
+  ↓
+Google AI APIs
+  ↓
+External Media Storage
+  ↓
+Supabase Metadata
+  ↓
+Frontend
+The application must prioritize: Reliability, Automation, Dynamic behavior, Persistent state, Error recovery, Real-time progress, Secure API management, Flexible CSV handling, Scalable batch processing.
 
-Create a prompt.
+4. PROJECT GOALS
+Upload CSV files.
+Understand imperfect CSV structures automatically.
+Detect and map columns intelligently.
+Preserve unknown/custom columns.
+Preview and inspect CSV contents.
+Allow manual correction of detected mappings.
+Create projects and scenes dynamically.
+Detect required media types.
+Generate images automatically.
+Generate voiceovers automatically.
+Generate videos when supported/configured.
+Support master prompts.
+Support dynamic prompt composition.
+Manage multiple Google AI API profiles.
+Automatically select an available API profile.
+Handle quota/rate-limit failures intelligently.
+Track every generation task.
+Display real-time progress.
+Display per-asset completion indicators.
+Persist all application metadata in Supabase.
+Do not store generated media binaries directly in Supabase database.
+Store generated media externally.
+Provide an asset browser.
+Provide selective export.
+Allow selecting individual files or folders for export.
+Preserve state after browser refresh.
+Support retrying failed generation tasks.
+Provide secure authentication.
+Provide settings and API profile management.
+Make the entire application dynamically synchronized.
+5. TARGET USERS
+The primary user is a content creator, video creator, YouTube creator, social media creator, researcher, marketer, or production team member who needs to generate large amounts of AI media. The user should be able to prepare content in a spreadsheet/CSV and then let AI ContentStudio perform the repetitive generation process.
 
-Open an AI generation tool.
+6. SYSTEM ARCHITECTURE
+The proposed architecture is modular, asynchronous, and strictly separates frontend presentation from backend source-of-truth state. The diagram below illustrates the complete system flow, from user interaction to background workers, API rotation, and database synchronization.
 
-Enter the prompt.
-
-Wait for generation.
-
-Download the result.
-
-Rename the file.
-
-Generate voiceover separately.
-
-Download the audio.
-
-Organize files.
-
-Repeat hundreds of times.
-
-This becomes impractical for large‑scale content production. The proposed system solves this problem by providing a centralised, automated pipeline.
-
-4. PROPOSED SOLUTION
-The application allows the user to upload a structured CSV. For example:
-
-csv
-id,visual_prompt,voiceover_script,filename,aspect_ratio
-001,"Ancient Roman marketplace at sunset","Imagine walking through ancient Rome.","scene_001","16:9"
-002,"Roman soldiers marching through a city","Thousands of soldiers once marched here.","scene_002","16:9"
-003,"Ancient Roman emperor in a palace","At the center of the empire stood the emperor.","scene_003","16:9"
-Each row becomes a Scene. Every scene can independently track:
-
-text
-Visual Status
-Voice Status
-Video Status
-Overall Status
-The generation engine processes all scenes automatically, independently of the browser, with full error recovery and persistent state.
-
-5. PROJECT OBJECTIVES
-Primary Objectives
-ID	Objective
-O1	Automate bulk content generation from CSV data.
-O2	Eliminate repetitive manual prompt entry and downloading.
-O3	Centralise AI image, video, and voice generation.
-O4	Provide reliable batch processing with background jobs.
-O5	Maintain persistent state across browser closures, page refreshes, and backend restarts.
-O6	Securely store and manage authorised API profiles.
-O7	Support multiple users with complete data isolation.
-O8	Automatically organise generated assets and simplify export.
-6. PROJECT SCOPE
-6.1 Included
-User authentication (registration, login, logout, password reset, session management)
-
+PRODUCTION DEPLOYMENT
+SYSTEM HEALTH
+LOGGING / MONITORING / AUDIT
+EXPORT SYSTEM
+ASSET MANAGEMENT
+ASSET COMPLETION
+LIVE PROGRESS ENGINE
+REAL-TIME SYNCHRONIZATION
+ERROR & RECOVERY SYSTEM
+GENERATION TASK STATE MACHINE
+EXTERNAL OBJECT / MEDIA STORAGE
+GENERATED MEDIA
+GOOGLE AI SERVICES
+AI PROVIDER ABSTRACTION
+DYNAMIC PROMPT ENGINE
+SECURITY / SECRET MANAGEMENT
+GOOGLE AI API PROFILE MANAGER
+BACKGROUND WORKER SYSTEM
+GENERATION ORCHESTRATION
+SUPABASE
+CANONICAL CONTENT MODEL
+INTELLIGENT CSV INGESTION PIPELINE
+APPLICATION / BUSINESS SERVICES
+AUTHENTICATION & AUTHORIZATION
+FASTAPI — API LAYER
+FRONTEND — WEB APPLICATION
+High confidence
+Low confidence
+New Task
+Already Exists
+HTTPS / REST
+Frontend Hosting
+FastAPI Server
+Worker Server
+Supabase
+Object Storage
+Google AI APIs
+FastAPI Health
+Database Health
+Worker Health
+AI Provider Health
+Storage Health
+Overall System Status
+Structured Logs
+Error Logs
+Audit Logs
+System Metrics
+API Metrics
+Worker Metrics
+Generation Metrics
+Select Individual Assets
+Select Scenes
+Select Folder / Category
+Select Entire Project
+Export Planner
+Export Job
+Package / ZIP
+Download / Export
+Asset Index
+Image Assets
+Voiceover Assets
+Video Assets
+Search
+Filter
+Sort
+Pagination
+Multi-select
+Verify Generated Output
+Verify Storage
+Verify Metadata
+🔵 BLUE ✓
+Total Tasks
+Pending
+Processing
+Completed
+Failed
+Progress Calculator
+Overall Percentage
+Database State Change
+Supabase Realtime
+Realtime Event
+Frontend State Store
+Error Detection
+Error Classifier
+Invalid API Key
+Quota Exceeded
+Rate Limited
+Network Error
+Timeout
+Provider Error
+Storage Error
+Database Error
+Retry Policy
+PENDING
+QUEUED
+PROCESSING
+COMPLETED
+FAILED
+RETRYING
+CANCELLED
+UNSUPPORTED
+Images
+Voiceovers
+Videos
+Generated Images
+Generated Voiceovers
+Generated Videos
+AI Image Generation
+AI Text-to-Speech
+AI Video Generation
+AI Provider Interface
+Google AI Provider
+Future AI Provider
+Scene + CSV Data
+Master Prompt
+Scene Prompt
+Style / Character / Camera
+Voice / Tone / Language
+Video Settings
+Prompt Composer
+Final Image Prompt
+Final Voice Request
+Final Video Prompt
+API Key Input
+Server-side Encryption
+Encrypted API Key Storage
+Server-side Decryption
+Never Expose Raw Key to Frontend
+Profile Selector
+Google AI API Profile A
+Google AI API Profile B
+Google AI API Profile C
+Profile Health
+Usage / Request Tracking
+Quota Detection
+Rate Limit Detection
+Temporary Unavailable State
+Worker Manager
+Generation Worker
+Generation Worker
+Additional Workers
+Concurrency Controller
+Rate Limiter
+Generation Job
+Generation Planner
+Task Creator
+Task Queue
+Task Lock
+Idempotency Check
+PostgreSQL Database
+profiles
+projects
+csv_files
+csv_columns
+csv_rows / normalized_data
+scenes
+generation_jobs
+generation_tasks
+assets
+api_profiles
+generation_settings
+error_logs
+audit_logs
+Scene
+Image Prompt
+Video Prompt
+Voiceover Script
+Master Prompt
+Negative Prompt
+Style
+Character
+Camera
+Lighting
+Tone
+Voice
+Language
+Duration
+Aspect Ratio
+Media Type
+Custom / Unknown Metadata
+CSV Received
+File Validation
+Encoding Detection
+Delimiter Detection
+Header Detection
+Structure Analysis
+Column Analysis
+Sample Value Analysis
+Semantic Column Mapping
+Mapping Confidence
+Manual Mapping
+Canonical Normalization
+Normalized Data Validation
+Scene Creation
+User Service
+Project Service
+CSV Processing Service
+Intelligent Column Mapping Service
+CSV Normalization Service
+Scene Management Service
+Generation Orchestrator
+Task Management Service
+Prompt Engineering Service
+API Profile Manager
+AI Provider Abstraction
+Asset Management Service
+Storage Service
+Progress Service
+Export Service
+Error / Recovery Service
+Audit Service
+Supabase Auth
+Session / JWT
+Authorization
+Row Level Security
+FastAPI Application
+Authentication API
+User API
+Project API
+CSV API
+Generation API
+Task API
+Asset API
+Export API
+Settings API
+API Profile API
+Health / Monitoring API
+Login
+Registration
 Dashboard
+Projects
+Project Workspace
+CSV Upload
+CSV Analysis
+Column Mapping
+CSV Data Preview
+Generation Control
+Live Progress
+Task Monitor
+Asset Browser
+Media Preview
+Selective Export
+Settings
+Google AI API Profiles
+Account / Security
+👤 USER
+7. TECHNOLOGY STACK
+Frontend
+The existing frontend should be preserved where practical. It should provide: Dashboard, Projects, Batch Generation, Asset Browser, Selective Export, Settings, Authentication, Live progress interface.
 
-Project management (CRUD)
+Backend (FastAPI)
+FastAPI is responsible for: REST API, Authentication validation, User authorization, CSV processing, CSV analysis, Column mapping, Project management, Scene management, Generation task management, API profile management, Generation orchestration, Error handling, Storage management, Progress APIs, Realtime/event integration.
 
-CSV upload, validation, and scene import
+Database (Supabase)
+Supabase is responsible for persistent application data. It should store: Users, Projects, CSV metadata, CSV columns, Normalized scene data, Generation jobs, Generation tasks, Asset metadata, API profiles, Settings, Errors, Statuses, Timestamps, Relationships.
 
-API profile management
+8. AUTHENTICATION
+The platform must support:
 
-Google AI integration
+Registration: User can create an account using Email and Password.
+Login: User can log in securely.
+Logout: User can log out.
+Session persistence: Refreshing the browser must not unnecessarily log the user out.
+Protected routes: Dashboard, Projects, Batch Generation, Assets, Settings must require authentication.
+9. SETTINGS SYSTEM
+The Settings page should allow users to manage their account and AI configuration. The interface should include: Account Information, Security, Google AI Profiles, Generation Defaults, Storage Configuration, Application Preferences.
 
-Image generation
+10. GOOGLE AI API PROFILE MANAGEMENT
+The user may have multiple Google AI API profiles (e.g., Profile 1, Profile 2, Profile 3). Each profile contains: Profile Name, Google AI API Key, Status, Usage information if available, Last successful request, Last error, Created date.
 
-Video generation (where supported by configured APIs)
+11. API KEY SECURITY
+API keys must never be exposed to the frontend after being saved. The system should:
 
-Voiceover generation (Google‑supported TTS)
+Frontend
+  ↓
+FastAPI
+  ↓
+Validate API key
+  ↓
+Encrypt securely
+  ↓
+Store encrypted value
+The frontend should only see: Profile Name, Masked API Key, Status. Example: AI Batch Studio •••••••••••••• Connected ✓
 
-Background job queue with workers
+12. API CONNECTION TEST
+Every API profile should have a "Test Connection" feature. The test must make a real API request. Possible results: ✓ Connection successful, ✗ Invalid API key, ⚠ Quota exceeded, ⚠ Rate limit reached, ✗ Authentication failed, ✗ Service unavailable. Do not show fake success.
 
-Configurable retry, pause, resume, and recovery
+13. MULTIPLE API PROFILE MANAGEMENT
+The generation system should support multiple configured API profiles. The worker should select an appropriate available profile. Conceptually:
 
-Real‑time progress tracking
-
-File storage and organisation
-
-Selective asset selection and ZIP export
-
-Database persistence
-
-Multi‑user isolation (Row‑Level Security)
-
-Security best practices (no exposure of secrets)
-
-Production deployment support
-
-7. OUT OF SCOPE
-The initial version does not include:
-
-Direct social media publishing (YouTube, TikTok, Facebook)
-
-Advanced video editing timeline
-
-Non‑linear video editor
-
-Team collaboration / shared projects
-
-Payment gateway or subscription billing
-
-Marketplace or third‑party integrations
-
-AI model training or custom foundation model training
-
-These features may be added in future versions.
-
-8. TARGET USERS
-YouTube creators
-
-Documentary creators
-
-Short‑form content creators
-
-AI content creators
-
-Social media creators
-
-Digital marketers
-
-Video production teams
-
-Researchers
-
-Content agencies
-
-9. CORE USE CASE
-A user uploads a CSV containing hundreds of visual prompts and voiceover scripts and automatically generates the corresponding media.
-
-text
-CSV (500 scenes)
+Generation Task
+  ↓
+Select API Profile
+  ↓
+Request
+  ↓
+Success?
+├── YES → Continue
+└── NO
       ↓
-Import
+Quota/Rate Limit?
       ↓
-Validate
+Mark profile temporarily unavailable
       ↓
-Start Job
+Select next available profile
       ↓
-Queue
-      ↓
+Retry task
+The system must never bypass provider restrictions or violate API terms. It should only rotate among legitimately configured API credentials.
+
+14. CSV UPLOAD SYSTEM
+The system must support: Drag and drop, Browse/upload, UTF-8 CSV, Different delimiters when detectable, Reasonable variations in headers, Different column ordering, Optional columns, Custom columns. The user should not be forced to use one rigid CSV schema.
+
+15. INTELLIGENT CSV ANALYSIS
+CSV
+  ↓
+Encoding detection
+  ↓
+Delimiter detection
+  ↓
+Header detection
+  ↓
+Column analysis
+  ↓
+Data type detection
+  ↓
+Semantic column mapping
+  ↓
+Validation
+  ↓
+Preview
+The system should detect columns such as: id, scene, scene_number, visual_prompt, image_prompt, visual_description, video_prompt, voiceover, voiceover_script, narration, tone, voice, language, duration, aspect_ratio, filename, media_type, master_prompt, negative_prompt, style, character, location, camera, lighting, emotion.
+
+16. INTELLIGENT COLUMN MAPPING
+Examples: image_prompt, visual_prompt, visual_description, scene_description may map to: Visual Prompt. Similarly: voiceover, narration, voiceover_script, narration_text may map to: Voiceover Script. The system should use intelligent matching based on: Column name, Data examples, Data type, Content patterns, Existing mappings.
+
+17. CONFIDENCE SCORE
+Detected mappings should provide confidence. Example: visual_description → Visual Prompt (98% confidence). If confidence is low: description → ? ⚠ Ambiguous column. The user should be able to manually select the correct meaning.
+
+18. MANUAL COLUMN MAPPING
+The user must be able to override automatic mappings. Example:
+
+CSV Column             System Mapping
+visual_description  →  Visual Prompt ▼
+narration_text       →  Voiceover ▼
+tone                 →  Tone ▼
+length               →  Duration ▼
+Available mappings should include: Visual Prompt, Video Prompt, Voiceover, Tone, Voice, Duration, Aspect Ratio, Filename, Media Type, Master Prompt, Negative Prompt, Style, Character, Camera, Lighting, Language, Custom, Ignore.
+
+19. PRESERVE UNKNOWN COLUMNS
+Unknown columns must never be silently deleted. For example: music, emotion, camera_movement, historical_period, custom_style should be stored as custom metadata. The original CSV information should remain recoverable.
+
+20. CSV DETAIL VIEW
+After uploading a CSV, the user should be able to open it. Display: File Name, File Size, Upload Date, Rows, Columns, Encoding, Delimiter, Status.
+
+21. CSV COLUMN VIEW
+Show: Column Name, Detected Meaning, Data Type, Confidence, Non-empty Count, Example Value.
+
+22. CSV DATA PREVIEW
+Display actual CSV rows. Support: Search, Filter, Sort, Pagination, Column visibility, Row inspection. The user should be able to inspect exactly what the system imported.
+
+23. DIFFERENT CONTENT TYPES
+The system must support different CSV workflows:
+
+Image only: scene, image_prompt, filename (Generate images)
+Voiceover only: scene, voiceover, tone, voice (Generate voiceovers)
+Image + Voiceover: scene, visual_prompt, voiceover (Generate both)
+Image + Video + Voiceover: scene, image_prompt, video_prompt, voiceover, duration, aspect_ratio (Generate all supported assets)
+24. MEDIA TYPE DETECTION
+If a CSV contains media_type = image, generate image. If media_type = voice, generate voiceover. If media_type = video, generate video. If no explicit media type exists, infer requirements from available columns.
+
+25. MASTER PROMPT SYSTEM
+CSV files may contain master_prompt. The system composes: Master Prompt + Scene Prompt + Relevant Metadata.
+
+26. DYNAMIC PROMPT COMPOSITION
+Prompt composition should dynamically use available information. Potential components: Master Prompt, Visual Prompt, Character, Location, Camera, Lighting, Style, Tone, Emotion, Negative Prompt. Only fields that exist should be included.
+
+27. IMAGE GENERATION
+For image tasks: Master Prompt + Visual Prompt + Style + Character + Camera + Lighting + Aspect Ratio + Negative Prompt. Generate through the configured Google AI integration.
+
+28. VOICEOVER GENERATION
+For voiceover tasks: Voiceover Script + Voice + Tone + Language + Speed + Other applicable settings. Use the configured Google AI/TTS service.
+
+29. VIDEO GENERATION
+Where a supported Google video-generation API/model is configured: Video Prompt + Master Prompt + Duration + Aspect Ratio + Style. Generate the video. If a requested operation is unsupported, Unsupported must be shown rather than pretending generation occurred.
+
+30. PROJECT SYSTEM
+Users can create multiple projects. Each project contains: Project Name, Description, CSV Files, Scenes, Generation Jobs, Generation Tasks, Assets, Settings, Created Date, Updated Date, Status.
+
+31. SCENE SYSTEM
+Each CSV row can become a scene. Example: Scene 001: Image ✓, Voiceover ✓, Video ⏳. Each scene should have its own task state.
+
+32. GENERATION TASK SYSTEM
+Each asset generation should become an individual task. Example: Scene 001 ├── Image Task ├── Voiceover Task └── Video Task. Each task has: Task ID, Project ID, Scene ID, Asset Type, Status, API Profile, Prompt, Started At, Completed At, Error, Retry Count, Storage Reference.
+
+33. GENERATION STATUS
+Supported statuses: Pending, Queued, Processing, Completed, Failed, Retrying, Cancelled, Skipped, Unsupported.
+
+34. BLUE COMPLETION CHECKMARK
+A blue checkmark ✓ must only appear when the asset has genuinely completed. Completion means: AI generation succeeded + output received + output stored/referenced + database updated.
+
+35. LIVE PROGRESS SYSTEM
+Display real-time progress. Example: Overall Progress 72%, Images 72/100, Voiceovers 68/100, Videos 35/100. Currently Processing: Scene 73 — Image Generation. Pending: 28. Failed: 2.
+
+36. PROGRESS MUST BE REAL
+Never use fake progress. Do not implement setInterval() to artificially increase percentages. Progress must come from: Actual Tasks + Actual Database State + Actual Worker State.
+
+37. REAL-TIME SYNCHRONIZATION
 Worker
-      ↓
-Google AI
-      ↓
-Images/Videos + Voiceovers
-      ↓
-Storage
-      ↓
-Export
-This workflow is the central product feature. Authentication, settings, and other features exist to support it.
+  ↓
+Output generated
+  ↓
+External storage
+  ↓
+Supabase status update
+  ↓
+Realtime event
+  ↓
+Frontend
+  ↓
+Blue ✓
+The user must not need to refresh the page.
+
+38. BROWSER REFRESH RECOVERY
+If 73/100 were completed before refreshing, after refreshing the page it should still show 73/100. The state must come from persistent backend/database data.
+
+39. FAILURE MANAGEMENT
+If a task fails: Scene 34 Image ❌ Failed. Display an appropriate error. Provide: Retry. Retry should create/requeue a real task.
+
+40. BACKGROUND PROCESSING
+Long-running generation must not depend on an open browser request. Use a background worker/task queue architecture.
+
+User clicks Start
+  ↓
+FastAPI creates generation job
+  ↓
+Tasks enter queue
+  ↓
+Worker processes tasks
+  ↓
+Database updates
+  ↓
+Frontend monitors status
+41. EXTERNAL MEDIA STORAGE
+Generated Images, Audio, Videos must not be stored as binary data inside normal Supabase database tables. Instead:
+
+Google API
+  ↓
+Generated Media
+  ↓
+External/Configured Storage
+  ↓
+Storage Reference
+  ↓
+Supabase
+Supabase stores metadata and references.
+
+42. ASSET BROWSER
+The Asset Browser should show generated assets. Support: Images, Audio, Videos. Filters: Project, Scene, Asset Type, Status, Date, Filename. Each asset should display: Preview, Filename, Type, Scene, Status, Created Date.
+
+43. SELECTIVE EXPORT
+The application must allow users to select: Individual files, Multiple files, Individual scenes, Multiple scenes, Folders/categories, Entire projects. Then export selected assets.
+
+44. FOLDER-BASED ORGANIZATION
+Generated assets should be organized logically. Example:
 
-10. COMPLETE SYSTEM WORKFLOW
-Registration – User creates an account with email, password, and confirm password. Supabase Auth creates the user.
-
-Login – User logs into the application.
-
-Dashboard – Displays projects, recent jobs, generation statistics, API status, and storage usage.
-
-API Configuration – User adds an authorised Google API profile (e.g., “Production” with a masked key).
-
-Test API – System performs a real connectivity test against the configured API.
-
-Create Project – User creates a project (e.g., “Ancient Rome Documentary”).
-
-Upload CSV – User uploads a CSV file (e.g., ancient_rome.csv).
-
-CSV Validation – System checks file type, required columns, empty rows, duplicate IDs, invalid values, unsupported settings, and missing prompts.
-
-Preview – Displays total scenes, valid count, invalid count, and allows inspection of invalid rows.
-
-Start Generation – User triggers batch generation.
-
-Background Job Creation – A job is created and enqueued.
-
-Worker Processing – Worker processes each scene independently, calling Google APIs.
-
-Progress Tracking – UI updates with real‑time progress (completed/pending/failed).
-
-Retry/Resume – Failed or paused jobs can be retried/resumed without re‑generating completed scenes.
-
-File Management – Generated assets are organised in project folders.
-
-Asset Selection & Export – User selects files and exports them as a ZIP archive.
-
-Persistent State – All data survives logouts, browser closures, and backend restarts.
-
-11. FUNCTIONAL REQUIREMENTS
-This section summarises the detailed requirements spread across the document. Key functional areas include:
-
-Authentication (register, login, logout, password reset, session persistence)
-
-Project Management (CRUD, user‑ownership, archive)
-
-CSV Handling (upload, parse, validate, preview, scene creation)
-
-API Key Management (secure storage, multiple profiles, test connectivity)
-
-AI Generation (image, video where supported, voiceover via Google‑supported TTS)
-
-Job & Queue (background worker, concurrency control, pause, resume, cancel, retry)
-
-Progress Dashboard (aggregate and per‑scene status)
-
-File Storage (organised by project and type, retrieval)
-
-Export (selective file selection, ZIP download)
-
-Multi‑user Isolation (RLS, full separation of all user‑owned data)
-
-12. NON‑FUNCTIONAL REQUIREMENTS
-Performance – UI remains responsive while large jobs run.
-
-Reliability – Jobs survive temporary failures, browser closure, and backend restarts.
-
-Scalability – Architecture supports multiple concurrent users.
-
-Security – Credentials and user data must be completely isolated; no secrets exposed.
-
-Maintainability – Clean separation of frontend, API, services, workers, database, AI providers, and storage.
-
-Extensibility – Architecture abstracts providers, allowing future addition of new AI services without rewrites.
-
-13. SYSTEM ARCHITECTURE
-text
-                         USER
-                           │
-                           ▼
-                    WEB APPLICATION
-                           │
-             ┌─────────────┴─────────────┐
-             │                           │
-             ▼                           ▼
-        SUPABASE                      FASTAPI
-             │                           │
-       ┌─────┼─────┐               ┌────┴─────┐
-       │     │     │               │          │
-      Auth   DB  Storage          API       Services
-                                       │
-                                       ▼
-                                     QUEUE
-                                       │
-                                       ▼
-                                     WORKER
-                                       │
-                         ┌─────────────┼─────────────┐
-                         ▼             ▼             ▼
-                       IMAGE         VIDEO          TTS
-                         │             │             │
-                         └─────────────┼─────────────┘
-                                       ▼
-                                    STORAGE
-                                       │
-                                       ▼
-                                     EXPORT
-Key principle: The entire application must operate as one connected system. Saving an API key must flow through to actual API calls. CSV upload must lead to scene creation, job queuing, generation, storage, and export.
-
-14. TECHNOLOGY STACK
-Component	Technology
-Backend Framework	FastAPI (Python)
-Database & Auth	Supabase (PostgreSQL, Auth, Storage, RLS)
-AI Services	Google AI APIs / Google‑supported generation services
-Job Queue	Redis + Celery / RQ / Arq (or equivalent background worker)
-Frontend	Web application (React, Vue, Svelte, etc. – framework‑agnostic in this spec, but must communicate via environment‑based configuration)
-Storage	Supabase Storage (or compatible object store)
-Deployment	Cloud‑ready, production ASGI server (e.g., Uvicorn, Gunicorn with Uvicorn workers)
-15. AUTHENTICATION & USER MANAGEMENT
-Managed entirely through Supabase Auth.
-
-Registration, login, logout, password reset.
-
-Session tokens verified by FastAPI on every protected request.
-
-No sensitive data stored in localStorage.
-
-16. API KEY MANAGEMENT
-Users create named API profiles (e.g., “Production”, “Secondary”).
-
-Credentials stored securely on the server (encrypted at rest, never exposed to frontend).
-
-System provides a Test endpoint that performs a real, minimal API call.
-
-Profiles have connection status (active/inactive) and last‑tested timestamp.
-
-Multiple authorised profiles may be used, but the system must not circumvent provider usage limits or terms.
-
-On quota/rate‑limit failures, the system may fall back to another authorised profile only when consistent with the provider’s terms.
-
-17. CSV PROCESSING SYSTEM
-17.1 Minimum CSV Format
-csv
-id,visual_prompt,voiceover_script,filename
-17.2 Recommended Format
-csv
-id,visual_prompt,voiceover_script,filename,aspect_ratio,media_type,voice_name
-17.3 Validation Rules
-File type must be CSV
-
-Required columns must be present
-
-visual_prompt must not be empty
-
-id must be unique within the project
-
-media_type must be a supported type (image, video)
-
-aspect_ratio must be valid (e.g., “16:9”, “9:16”, “1:1”)
-
-No unsupported encoding; corrupted files rejected
-
-Invalid rows are reported, not silently discarded
-
-17.4 Workflow
-Upload CSV
-
-Parse and validate
-
-Show preview (valid/invalid counts)
-
-On acceptance, create scene records in the database
-
-18. AI GENERATION ENGINE
-The generation engine uses a provider abstraction to avoid tight coupling:
-
-text
-Generation Provider
-        │
-        ├── Image Provider
-        ├── Video Provider
-        └── Voice Provider
-Each provider is implemented for Google‑supported APIs. If a provider cannot perform a requested operation (e.g., video generation), it returns an explicit “UNAVAILABLE” state rather than a fake success.
-
-18.1 Image Generation
-For each scene with a visual prompt, the worker calls the image generation API, stores the result, and records the asset in the database.
-
-18.2 Video Generation
-If the configured Google service/API supports video generation, the worker follows a similar flow. Otherwise, the system displays “VIDEO GENERATION UNAVAILABLE” and does not create fake assets.
-
-19. VOICEOVER GENERATION
-For every scene with a voiceover_script, the worker calls a Google‑supported Text‑to‑Speech (TTS) service. The resulting audio file is stored and associated with the scene. Voiceover generation status is tracked independently from visual generation.
-
-20. BATCH PROCESSING & JOB QUEUE
-20.1 Generation Job
-A generation job aggregates all scenes of a project. It tracks:
-
-text
-Total tasks
-Completed tasks
-Processing tasks
-Failed tasks
-Pending tasks
-20.2 Queue Architecture
-Long‑running generation must not depend on an open browser request:
-
-text
-Frontend → FastAPI → Job Database → Queue → Worker → Google API
-Recommended implementation: Redis + a background task library (Celery, RQ, Arq, or similar) that persists job state.
-
-20.3 Worker Behaviour
-Processes one scene at a time (or configurable concurrency).
-
-Generates visual, then voice (order may be configurable).
-
-Updates database status after each step.
-
-Respects configurable concurrency and provider rate limits.
-
-20.4 Concurrency
-Configurable (default conservative, e.g., 1‑2 concurrent operations). Should never flood the provider with hundreds of simultaneous requests.
-
-20.5 Quota & Rate Limit Handling
-When Google returns 429 (quota/rate limit), the worker pauses the job, sets an appropriate status, and allows the user to resume later. Completed items are preserved.
-
-21. PROGRESS TRACKING
-A dashboard displays:
-
-Overall project progress (percentage)
-
-Breakdown by status: completed, processing, failed, pending
-
-Current scene and current operation (e.g., “Generating Voiceover”)
-
-Progress updates happen in near real‑time via database queries (polling or WebSocket, depending on implementation).
-
-22. RETRY & RECOVERY
-Retry – Failed tasks are automatically retried up to a configurable maximum attempt count.
-
-Resume – If a job is paused or interrupted (e.g., backend restart), it can be resumed. Already completed scenes must not be re‑generated.
-
-Recovery – Job state is persisted in the database; upon worker startup, pending/in‑progress jobs are reloaded and execution continues from the last successful scene.
-
-23. FILE MANAGEMENT
-Generated files are organised automatically in a logical structure:
-
-text
 Project/
 ├── images/
-│   ├── scene_001.png
-│   ├── scene_002.png
-├── videos/
-│   ├── scene_001.mp4
 ├── voiceovers/
-│   ├── scene_001.wav
-│   ├── scene_002.wav
-└── final/
-    └── (combined outputs, if applicable)
-Each asset is tracked in the database with its storage path, size, type, provider, and model.
+├── videos/
+└── metadata/
+45. DATABASE DESIGN
+Recommended logical entities: profiles, projects, csv_files, csv_columns, scenes, generation_jobs, generation_tasks, assets, api_profiles, generation_settings, error_logs. Relationships must use proper foreign keys and user ownership.
 
-24. EXPORT SYSTEM
-Users can select files individually, by status (Completed, Failed), or all.
+Entity-Relationship Diagram (ERD)
+profiles (auth.users 1‑to‑1)
+   │
+   ├──< projects
+   │       │
+   │       ├──< csv_files
+   │       │       │
+   │       │       └──< csv_columns
+   │       │
+   │       ├──< scenes
+   │       │       │
+   │       │       └──< generation_tasks (FK scene_id)
+   │       │                │
+   │       │                └──< assets (FK task_id, scene_id, project_id)
+   │       │
+   │       └──< generation_jobs
+   │               │
+   │               └──< generation_tasks (FK job_id)
+   │
+   ├──< api_profiles
+   │       │
+   │       └──< api_profile_health_events
+   │
+   ├──< generation_settings (1 row per user, or per project)
+   ├──< audit_logs
+   ├──< error_logs
+   └──< idempotency_keys
+46. USER DATA ISOLATION
+Every user's data must be isolated. User A must never be able to access User B's projects, CSV files, API keys, generation tasks, assets, metadata. Use Supabase Row Level Security and backend authorization appropriately.
 
-Selected files are packed into a ZIP archive that preserves the project folder structure.
+47. API PROFILE DATA
+Store API profile metadata securely. Never return raw API keys to the browser after storage.
 
-Export metadata (e.g., job ID, timestamp) is recorded for traceability.
+48. ERROR HANDLING
+Every API request should have: Loading, Success, Error, Timeout, Finally. No UI should become permanently stuck on Saving... Loading... Generating... Processing...
 
-25. PROJECT MANAGEMENT
-Users can:
+49. NETWORK FAILURE HANDLING
+If the backend becomes unavailable: "Backend unavailable" should be shown clearly. The frontend should not silently wait forever.
 
-Create, rename, open, delete, and archive projects.
+50. API TIMEOUTS
+Every external API request should have reasonable timeout handling.
 
-Each project belongs to exactly one user (multi‑user isolation enforced via RLS).
+Task
+  ↓
+Timeout
+  ↓
+Retry policy
+  ↓
+Retry or Failed
+51. RETRY SYSTEM
+Retry should support: Failed API calls, Temporary network failures, Rate limits, Temporary provider failures. Do not endlessly retry permanent failures.
 
-Projects maintain a status (e.g., draft, active, completed, archived).
+52. SECURITY
+The system must: Protect API keys, Protect user sessions, Validate file uploads, Validate API requests, Prevent unauthorized project access, Use secure database policies, Avoid exposing secrets in logs, Avoid exposing secrets in frontend JavaScript.
 
-26. DATABASE DESIGN
-The Supabase PostgreSQL database includes the following core tables (all subject to Row‑Level Security with auth.uid() = user_id):
+53. DYNAMIC UI REQUIREMENT
+Nothing important should be hardcoded. Do not hardcode: Project count, Scene count, Progress, Completed count, API profiles, CSV filename, Rows, Statuses, Generated files, User information. All values must come from actual backend/database state.
 
-26.1 projects
-id, user_id, name, description, status, created_at, updated_at
+54. DASHBOARD
+Dashboard should dynamically show: Total Projects, Active Jobs, Completed Assets, Processing Assets, Failed Assets, Images Generated, Voiceovers Generated, Videos Generated. Recent projects and jobs should also come from the database.
 
-26.2 scenes
-id, project_id, user_id, external_id, visual_prompt, voiceover_script, filename, aspect_ratio, media_type, voice_name, visual_status, voice_status, video_status, overall_status, created_at, updated_at
+55. PROJECT STATUS
+All values must be calculated dynamically based on actual database records.
 
-26.3 generation_jobs
-id, project_id, user_id, status, total_tasks, completed_tasks, processing_tasks, failed_tasks, pending_tasks, started_at, completed_at, created_at, updated_at
+56. NO MOCK DATA
+The production application must not rely on: Fake API responses, Fake progress, Fake completed assets, Hardcoded statistics, Mock database records, Placeholder success messages.
 
-26.4 generation_tasks
-id, job_id, scene_id, user_id, task_type (visual/voice/video), status, attempt_count, error_message, started_at, completed_at, created_at, updated_at
+57. LOGGING
+The backend should log useful operational information. Never log raw API keys.
 
-26.5 api_profiles
-id, user_id, profile_name, provider, credential_reference (encrypted), is_active, connection_status, last_tested_at, created_at, updated_at
+58. AUDITABILITY
+Every generation task should be traceable. The system should be able to answer: Which project? Which scene? Which asset? Which prompt? Which API profile? When started? When completed? Did it fail? Why did it fail? Was it retried? Where is the output?
 
-26.6 assets
-id, user_id, project_id, scene_id, asset_type, storage_path, filename, mime_type, size, provider, model, created_at
+59. SCALABILITY
+The system should be designed so that 10 scenes and 1,000 scenes use the same architecture. Generation must be task-based and asynchronous.
 
-All tables are protected by Supabase Row‑Level Security policies to ensure a user can only access their own records.
-
-27. API SPECIFICATION
-All API routes are prefixed with /api and require authentication (unless public like /health). Suggested endpoints:
-
-Health
-http
-GET /health
-Projects
-http
-GET    /api/projects
-POST   /api/projects
-GET    /api/projects/{id}
-PATCH  /api/projects/{id}
-DELETE /api/projects/{id}
-CSV & Scenes
-http
-POST /api/projects/{id}/csv/upload
-GET  /api/projects/{id}/scenes
-Generation
-http
-POST /api/projects/{id}/generation/start
-GET  /api/generation/{job_id}
-POST /api/generation/{job_id}/pause
-POST /api/generation/{job_id}/resume
-POST /api/generation/{job_id}/cancel
-POST /api/generation/{job_id}/retry
-API Profiles
-http
-GET    /api/settings/api-profiles
-POST   /api/settings/api-profiles
-PATCH  /api/settings/api-profiles/{id}
-DELETE /api/settings/api-profiles/{id}
-POST   /api/settings/api-profiles/{id}/test
-Assets
-http
-GET    /api/projects/{id}/assets
-DELETE /api/assets/{id}
+60. USER WORKFLOW
+Register
+  ↓
+Login
+  ↓
+Dashboard
+  ↓
+Settings
+  ↓
+Add Google AI API Profile
+  ↓
+Test Connection
+  ↓
+Create Project
+  ↓
+Upload CSV
+  ↓
+CSV Analysis
+  ↓
+Column Mapping
+  ↓
+Preview
+  ↓
+Confirm
+  ↓
+Scenes Created
+  ↓
+Generation Plan Created
+  ↓
+Start Batch Generation
+  ↓
+Live Progress
+  ↓
+Image / Voiceover / Video Generation
+  ↓
+Blue Completion Indicators
+  ↓
+Asset Browser
+  ↓
+Select Files/Folders
+  ↓
 Export
-http
-POST /api/export
-GET  /api/export/{id}
-28. FRONTEND REQUIREMENTS
-Main Pages
-/login
+61. CORE PRINCIPLE
+The UI is not the source of truth. The backend/database state is the source of truth. If the UI says "Completed" but the database says "Processing", the system must resolve the discrepancy using the actual backend state.
+
+62. DYNAMIC STATE MODEL
+Every important object should have persistent state: User, Project, CSV, Scene, Generation Job, Generation Task, Asset, API Profile. All should have appropriate ID, User ownership, Status, Created timestamp, Updated timestamp.
+
+63. ACCEPTANCE CRITERIA
+The project is complete only when the following workflows actually work end-to-end:
+
+Authentication: Register ✓, Login ✓, Logout ✓, Refresh ✓, Protected routes ✓
+API Profiles: Add ✓, Save ✓, Encrypt ✓, Persist ✓, Test ✓, Refresh ✓
+CSV: Upload ✓, Analyze ✓, Detect columns ✓, Map columns ✓, Manual mapping ✓, Preview ✓, Preserve custom fields ✓
+Generation: Create task ✓, Queue task ✓, Generate image ✓, Generate voiceover ✓, Generate video where supported ✓, Store output ✓, Save metadata ✓
+Progress: Real-time status ✓, Completed count ✓, Pending count ✓, Failed count ✓, Processing task ✓, Refresh recovery ✓
+Assets: Asset Browser ✓, Filtering ✓, Preview ✓, Selection ✓, Export ✓
+64. DEVELOPMENT RULE FOR CLAUDE OPUS 5
+Claude must not assume that an existing feature works because the UI exists. For every feature: Inspect → Understand → Implement → Test → Verify. If a feature cannot be verified, clearly identify it as: NOT VERIFIED.
+
+65. IMPORTANT IMPLEMENTATION RULE
+Do not rewrite the entire existing application unnecessarily. Preserve working code. Modify existing components where possible. Avoid creating duplicate routes, services, database tables, authentication systems, or generation engines.
+
+66. FINAL PRODUCT VISION
+AI ContentStudio should ultimately behave like an automated production studio. The user should not have to manually manage hundreds of generation operations.
+
+67. NON-NEGOTIABLE REQUIREMENTS
+No fake functionality.
+No fake progress.
+No fake API success.
+No hardcoded project data.
+No hardcoded CSV schema.
+No silent deletion of CSV columns.
+No raw API keys exposed to frontend.
+No generated media binaries stored directly in Supabase database tables.
+All important application state must persist.
+Browser refresh must preserve state.
+Generation status must come from actual tasks.
+Blue checkmarks must represent actual completed assets.
+Errors must be visible and actionable.
+Failed tasks must be retryable where appropriate.
+Frontend and backend must remain synchronized.
+User data must be isolated.
+All important operations must be dynamically connected.
+Do not claim a feature is complete unless it has been tested.
+68. FINAL DEVELOPMENT INSTRUCTION FOR CLAUDE OPUS 5
+Treat this document as the authoritative product specification for AI ContentStudio.
 
-/register
+First inspect the existing codebase and architecture.
+Do not immediately rewrite or replace the existing project.
+Identify what is already implemented, what is incomplete, what is broken, and what must be added.
+Preserve working functionality.
+Implement missing functionality systematically.
+For every feature, verify the complete flow from frontend → FastAPI → Supabase/worker → external AI API → storage → database → frontend.
+Do not use mock data, fake progress, simulated completion, hardcoded values, or placeholder API responses for production functionality.
+When a feature requires an external service, clearly distinguish between: Implemented and Successfully verified with the real service.
+The ultimate goal is not merely to produce a visually complete dashboard. The goal is to deliver a fully functional, dynamic, persistent, secure, scalable AI content production system.
 
-/forgot-password
+flowchart TB
 
-/dashboard
+%% =========================================================
+%% AI CONTENTSTUDIO — COMPLETE SYSTEM ARCHITECTURE
+%% =========================================================
 
-/projects
+USER["👤 USER"]
 
-/projects/:id (project detail, CSV upload, scene list, generation controls)
+%% =========================================================
+%% FRONTEND
+%% =========================================================
 
-/projects/:id/generation (progress view)
+subgraph FRONTEND["FRONTEND — WEB APPLICATION"]
 
-/projects/:id/assets (file browser)
+    LOGIN["Login"]
+    REGISTER["Registration"]
+    DASHBOARD["Dashboard"]
 
-/projects/:id/export
+    PROJECTS["Projects"]
+    PROJECT_DETAIL["Project Workspace"]
 
-/settings
+    CSV_UPLOAD_UI["CSV Upload"]
+    CSV_ANALYSIS_UI["CSV Analysis"]
+    CSV_MAPPING_UI["Column Mapping"]
+    CSV_PREVIEW_UI["CSV Data Preview"]
 
-/settings/api (API profile management)
+    GENERATION_UI["Generation Control"]
+    PROGRESS_UI["Live Progress"]
+    TASK_UI["Task Monitor"]
 
-UI Behaviour
-Modern, responsive design.
+    ASSET_UI["Asset Browser"]
+    PREVIEW_UI["Media Preview"]
 
-All forms display loading, success, and error states.
+    EXPORT_UI["Selective Export"]
 
-Generation progress updates dynamically.
+    SETTINGS_UI["Settings"]
 
-No hard‑coded localhost URLs; all API calls use environment‑based configuration.
+    API_PROFILE_UI["Google AI API Profiles"]
+    ACCOUNT_UI["Account / Security"]
 
-Browser‑accessible URLs are http://localhost:<port> or http://127.0.0.1:<port>, never 0.0.0.0.
+end
 
-29. BACKEND REQUIREMENTS
-FastAPI application structured with clear separation:
+USER --> LOGIN
+USER --> REGISTER
 
-main.py
+LOGIN --> DASHBOARD
+REGISTER --> DASHBOARD
 
-api/ – route handlers
+DASHBOARD --> PROJECTS
+PROJECTS --> PROJECT_DETAIL
 
-services/ – business logic (Supabase, Google, image, video, voice, storage, export)
+PROJECT_DETAIL --> CSV_UPLOAD_UI
+PROJECT_DETAIL --> GENERATION_UI
+PROJECT_DETAIL --> PROGRESS_UI
+PROJECT_DETAIL --> TASK_UI
+PROJECT_DETAIL --> ASSET_UI
 
-workers/ – background worker and task definitions
+CSV_UPLOAD_UI --> CSV_ANALYSIS_UI
+CSV_ANALYSIS_UI --> CSV_MAPPING_UI
+CSV_MAPPING_UI --> CSV_PREVIEW_UI
 
-models/, schemas/, middleware/, utils/, config.py
+ASSET_UI --> PREVIEW_UI
+ASSET_UI --> EXPORT_UI
 
-Authentication middleware verifies Supabase access tokens.
+SETTINGS_UI --> API_PROFILE_UI
+SETTINGS_UI --> ACCOUNT_UI
 
-All user‑owned resource accesses are scoped to the authenticated user.
+%% =========================================================
+%% API GATEWAY
+%% =========================================================
 
-API keys are never returned in plain text to the frontend.
+subgraph API_LAYER["FASTAPI — API LAYER"]
 
-Background workers process jobs using a persistent queue (Redis + task library).
+    API["FastAPI Application"]
 
-30. SECURITY REQUIREMENTS
-Never expose: passwords, raw API keys, service‑role keys, database passwords, access tokens, or encryption keys.
+    AUTH_API["Authentication API"]
+    USER_API["User API"]
 
-Never store sensitive keys in localStorage, CSV files, source code, Git, public files, or logs.
+    PROJECT_API["Project API"]
 
-All API‑key storage uses server‑side encryption (e.g., Supabase Vault or equivalent).
+    CSV_API["CSV API"]
 
-Row‑Level Security (RLS) enforces strict user‑ownership isolation.
+    GENERATION_API["Generation API"]
 
-CORS configured to allow only the intended frontend origin.
+    TASK_API["Task API"]
 
-Production deployment uses HTTPS and secure headers.
+    ASSET_API["Asset API"]
 
-31. MULTI‑USER ARCHITECTURE
-Every user exists within their own isolated context:
+    EXPORT_API["Export API"]
 
-Supabase Auth provides unique user IDs.
+    SETTINGS_API["Settings API"]
 
-All database tables include user_id and RLS policies.
+    API_PROFILE_API["API Profile API"]
 
-API routes derive the user identity from the token and scope all queries.
+    HEALTH_API["Health / Monitoring API"]
 
-File storage paths are prefixed by user ID or project ID to prevent cross‑access.
+end
 
-32. ERROR HANDLING
-Errors are categorised and handled gracefully:
+FRONTEND -->|"HTTPS / REST"| API
 
-User errors – invalid CSV, missing prompts → clear feedback in UI.
+API --> AUTH_API
+API --> USER_API
+API --> PROJECT_API
+API --> CSV_API
+API --> GENERATION_API
+API --> TASK_API
+API --> ASSET_API
+API --> EXPORT_API
+API --> SETTINGS_API
+API --> API_PROFILE_API
+API --> HEALTH_API
 
-Authentication errors – 401/403 → redirect to login or show permission denied.
+%% =========================================================
+%% AUTHENTICATION
+%% =========================================================
 
-Provider errors – quota, rate‑limit, unavailable service → job paused, informative message, not treated as fatal.
+subgraph AUTH["AUTHENTICATION & AUTHORIZATION"]
 
-Internal errors – 500 → logged with trace ID, generic error shown to user.
+    SUPABASE_AUTH["Supabase Auth"]
 
-33. LOGGING & MONITORING
-At minimum, a /health endpoint that reports the status of FastAPI, database, storage, and queue connectivity.
+    SESSION["Session / JWT"]
 
-Application logs structured (JSON) and include correlation IDs for request tracing.
+    AUTHORIZATION["Authorization"]
 
-Worker logs capture task attempts, failures, and retries.
+    RLS["Row Level Security"]
 
-Production monitoring should alert on critical failures (queue lag, database down, etc.).
-
-34. LOCAL DEVELOPMENT
-Recommended local setup:
-
-text
-Browser → Frontend (localhost:port) → FastAPI (localhost:8000) → Supabase Cloud → Google API
-FastAPI binds to 0.0.0.0:8000 (for Docker compatibility), but developers access it via http://localhost:8000 or http://127.0.0.1:8000.
-
-Frontend .env points to the FastAPI URL (configurable).
-
-Supabase credentials are stored in .env (never committed).
-
-Redis and worker can run locally or via Docker.
-
-35. PRODUCTION DEPLOYMENT
-Production architecture:
-
-text
-                     INTERNET
-                        │
-                        ▼
-                 ┌──────────────┐
-                 │   FRONTEND   │ (static hosting / CDN)
-                 └──────┬───────┘
-                        │
-                        ▼
-                 ┌──────────────┐
-                 │   FASTAPI    │ (ASGI server, e.g., Uvicorn)
-                 └──────┬───────┘
-                        │
-                 ┌──────┴───────┐
-                 ▼              ▼
-              SUPABASE        QUEUE (Redis)
-                                │
-                                ▼
-                              WORKER
-                                │
-                                ▼
-                           GOOGLE AI
-                                │
-                                ▼
-                            STORAGE
-FastAPI runs via a production ASGI server (Uvicorn, Gunicorn + Uvicorn workers).
-
-Workers run as separate processes or containers.
-
-All secrets configured via environment variables/secrets manager.
-
-CORS allows only the production frontend domain.
-
-36. ENVIRONMENT CONFIGURATION
-A .env.example file must be provided:
-
-env
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-
-FRONTEND_URL=
-BACKEND_URL=
-
-DATABASE_URL=
-
-REDIS_URL=
-
-GOOGLE_API_KEY=
-# Additional provider keys as needed
-Only include variables actually required. Secrets must be managed through the deployment environment’s secrets mechanism.
-
-37. TESTING REQUIREMENTS
-Unit Tests
-CSV parser, validation logic, status transitions, prompt processing, file naming, export logic.
-
-Integration Tests
-Supabase connection, authentication flow, API profile CRUD, generation job creation, storage operations.
-
-End‑to‑End Tests
-Full user journey using a small test CSV (2 scenes).
-
-Verify: register → login → add API profile → test API → create project → upload CSV → validate → start generation → real media generation → voiceover generation → file storage → progress display → job completion → asset selection → ZIP export → logout → re‑login → confirm all data persists.
-
-Failure Tests
-Simulate API failures (429, 500), worker crashes, backend restarts; ensure job resilience and correct recovery.
-
-38. ACCEPTANCE CRITERIA
-The project passes acceptance only when every checkbox is satisfied.
-
-Authentication
-□ Registration, login, logout, password reset work.
-□ Sessions persist correctly.
-□ Protected routes return 401 for unauthenticated requests.
-Supabase
-□ Database operational; RLS policies enforce user isolation.
-□ Storage correctly scoped per user/project.
-API Management
-□ API profiles can be created, edited, deleted.
-□ Credentials stored securely; API test performs a real call.
-□ Profiles persist across sessions.
-CSV Processing
-□ Upload, validation, preview, and scene creation work.
-□ Invalid rows are accurately reported.
-Generation
-□ Jobs are created and enqueued.
-□ Worker processes scenes, generates real media (images, voiceovers, and videos where supported).
-□ Files are saved to storage and database status updated.
-□ Progress updates in real‑time.
-□ Pause, resume, cancel, retry work without re‑generating completed scenes.
-Reliability
-□ Browser closure does not stop the job.
-□ Backend restart does not lose completed work.
-□ Duplicate generation is prevented.
-Export
-□ File selection (individual, select all, by status) works.
-□ ZIP export contains correct folder structure and actual files.
-Deployment
-□ Local development setup works.
-□ Production build and deployment succeed.
-□ CORS, health endpoint, and /docs operational.
-39. FUTURE EXPANSION
-Future versions may include:
-
-V2 – Video assembly, subtitle generation, background music, scene transitions.
-
-V3 – Direct publishing to YouTube, TikTok, Facebook.
-
-V4 – Team collaboration, shared projects, roles, admin dashboard.
+end
 
-V5 – Billing, subscription plans, usage‑based pricing.
+AUTH_API --> SUPABASE_AUTH
+SUPABASE_AUTH --> SESSION
+SESSION --> AUTHORIZATION
+AUTHORIZATION --> RLS
 
-40. DEVELOPMENT PHASES
-Phase	Focus
-1	Foundation (project structure, FastAPI, Supabase, environment, health endpoint)
-2	Authentication (registration, login, logout, sessions, password reset)
-3	Project Management (CRUD, RLS, dashboard)
-4	API Management (profiles, secure storage, testing)
-5	CSV System (upload, validation, preview, scene creation)
-6	AI Generation (provider abstraction, Google integration, image, video, voice)
-7	Job System (queue, worker, progress, retry, pause, resume, recovery)
-8	File Management (storage, asset library, selection, export, ZIP)
-9	Testing (unit, integration, E2E, failure, security)
-10	Deployment (production frontend, FastAPI, worker, monitoring)
-41. DEFINITION OF DONE
-The project is complete when the full pipeline is functional, persistent, and tested:
+%% =========================================================
+%% CORE APPLICATION SERVICES
+%% =========================================================
 
-text
-USER
- │
- ▼
-REGISTER → LOGIN → DASHBOARD
- │
- ▼
-ADD GOOGLE API → TEST API
- │
- ▼
-CREATE PROJECT → UPLOAD CSV → VALIDATE CSV
- │
- ▼
-START GENERATION → CREATE JOB → QUEUE → WORKER
- │      │
- │      ├─── VISUAL GENERATION
- │      └─── VOICE GENERATION
- │               │
- │               ▼
- │           STORAGE
- │               │
- │               ▼
- │           DATABASE → PROGRESS
- │               │
- │               ▼
- └───────────── EXPORT
-Every arrow represents a real, working integration, not simulated or hard‑coded behaviour.
+subgraph SERVICES["APPLICATION / BUSINESS SERVICES"]
 
-42. MASTER INSTRUCTIONS FOR IMPLEMENTATION
-The following instructions serve as the definitive implementation guide for AI coding agents (e.g., Gemini, Antigravity). They must be followed precisely.
+    USER_SERVICE["User Service"]
 
-You are responsible for completing the AI Content Studio application according to this specification.
+    PROJECT_SERVICE["Project Service"]
 
-Inspect the existing repository – understand the current codebase. Do not unnecessarily rewrite working components.
+    CSV_SERVICE["CSV Processing Service"]
 
-Identify gaps – locate incomplete, mocked, disconnected, broken, or placeholder functionality.
+    MAPPING_SERVICE["Intelligent Column Mapping Service"]
 
-Primary objective – make the end‑to‑end pipeline functional: CSV → AI generation (visual & voice) → storage → progress → export.
+    NORMALIZATION_SERVICE["CSV Normalization Service"]
 
-Technologies – Supabase (auth, DB, RLS, storage), FastAPI (backend), persistent background queue/worker (Redis + Celery/RQ/Arq), Google‑supported AI APIs.
+    SCENE_SERVICE["Scene Management Service"]
 
-No simulation – implement real functionality. Never create fake generation responses, fake progress, fake API connections, or placeholder completion states. If a capability is genuinely unavailable, the system must clearly indicate that rather than pretend success.
+    GENERATION_SERVICE["Generation Orchestrator"]
 
-API keys – handle securely. Never expose raw credentials to frontend. Never store secrets in source code, Git, CSV, localStorage, or logs.
+    TASK_SERVICE["Task Management Service"]
 
-Multi‑user isolation – every user‑owned record must be protected by RLS and server‑side authorization. Users must never access another user’s data.
+    PROMPT_SERVICE["Prompt Engineering Service"]
 
-Background jobs – long‑running generation must run through a persistent worker, not an HTTP request. Browser closure must not destroy a job; backend restart must not lose completed work.
+    API_PROFILE_SERVICE["API Profile Manager"]
 
-Job states – support pending, processing, completed, failed, paused, retry, resume. Completed scenes must not be re‑generated.
+    PROVIDER_SERVICE["AI Provider Abstraction"]
 
-Error handling – handle rate limits (429), quota errors, network failures gracefully.
+    ASSET_SERVICE["Asset Management Service"]
 
-Environment configuration – frontend uses configurable API URL (no hard‑coded localhost). Server may bind to 0.0.0.0 but browser URLs must use localhost or 127.0.0.1.
+    STORAGE_SERVICE["Storage Service"]
 
-Verification checklist:
+    PROGRESS_SERVICE["Progress Service"]
 
-/health endpoint returns 200
+    EXPORT_SERVICE["Export Service"]
 
-FastAPI /docs accessible
+    ERROR_SERVICE["Error / Recovery Service"]
 
-Frontend ↔ FastAPI communication functional
+    AUDIT_SERVICE["Audit Service"]
 
-FastAPI ↔ Supabase functional
+end
 
-FastAPI ↔ Google API functional
+USER_API --> USER_SERVICE
+PROJECT_API --> PROJECT_SERVICE
+CSV_API --> CSV_SERVICE
+GENERATION_API --> GENERATION_SERVICE
+TASK_API --> TASK_SERVICE
+ASSET_API --> ASSET_SERVICE
+EXPORT_API --> EXPORT_SERVICE
+SETTINGS_API --> API_PROFILE_SERVICE
+API_PROFILE_API --> API_PROFILE_SERVICE
 
-Worker ↔ Google API functional
+%% =========================================================
+%% CSV INTELLIGENCE PIPELINE
+%% =========================================================
 
-Generated assets stored and retrievable
+subgraph CSV_PIPELINE["INTELLIGENT CSV INGESTION PIPELINE"]
 
-Database reflects accurate generation status
+    FILE_RECEIVED["CSV Received"]
 
-Asset selection → export works
+    FILE_VALIDATION["File Validation"]
 
-End‑to‑end test – using a small CSV, perform the full flow: register → login → save API profile → test API → create project → upload CSV → validate → start generation → background job processes scenes → real media created → voiceover created → files saved → progress displayed → job completes → select files → export ZIP → logout → login again → verify all state persists.
+    ENCODING["Encoding Detection"]
 
-Final product – maintainable, secure, modular, testable, and deployable. Do not declare completion merely because pages load; verify the pipeline works from start to finish.
+    DELIMITER["Delimiter Detection"]
 
-Document prepared by AI Content Studio Project Team. This specification is the single source of truth for all development activities.
+    HEADER["Header Detection"]
 
+    STRUCTURE["Structure Analysis"]
 
+    COLUMN_ANALYSIS["Column Analysis"]
+
+    VALUE_ANALYSIS["Sample Value Analysis"]
+
+    SEMANTIC_MAPPING["Semantic Column Mapping"]
+
+    CONFIDENCE["Mapping Confidence"]
+
+    MANUAL_MAPPING["Manual Mapping"]
+
+    NORMALIZATION["Canonical Normalization"]
+
+    VALIDATION["Normalized Data Validation"]
+
+    SCENE_CREATION["Scene Creation"]
+
+end
+
+CSV_SERVICE --> FILE_RECEIVED
+FILE_RECEIVED --> FILE_VALIDATION
+
+FILE_VALIDATION --> ENCODING
+ENCODING --> DELIMITER
+DELIMITER --> HEADER
+HEADER --> STRUCTURE
+
+STRUCTURE --> COLUMN_ANALYSIS
+COLUMN_ANALYSIS --> VALUE_ANALYSIS
+
+VALUE_ANALYSIS --> SEMANTIC_MAPPING
+SEMANTIC_MAPPING --> CONFIDENCE
+
+CONFIDENCE -->|"High confidence"| NORMALIZATION
+CONFIDENCE -->|"Low confidence"| MANUAL_MAPPING
+
+MANUAL_MAPPING --> NORMALIZATION
+
+MAPPING_SERVICE --> SEMANTIC_MAPPING
+NORMALIZATION_SERVICE --> NORMALIZATION
+
+NORMALIZATION --> VALIDATION
+VALIDATION --> SCENE_CREATION
+
+SCENE_SERVICE --> SCENE_CREATION
+
+%% =========================================================
+%% CANONICAL CONTENT MODEL
+%% =========================================================
+
+subgraph CONTENT_MODEL["CANONICAL CONTENT MODEL"]
+
+    SCENE["Scene"]
+
+    IMAGE_PROMPT["Image Prompt"]
+
+    VIDEO_PROMPT["Video Prompt"]
+
+    VOICEOVER_SCRIPT["Voiceover Script"]
+
+    MASTER_PROMPT["Master Prompt"]
+
+    NEGATIVE_PROMPT["Negative Prompt"]
+
+    STYLE["Style"]
+
+    CHARACTER["Character"]
+
+    CAMERA["Camera"]
+
+    LIGHTING["Lighting"]
+
+    TONE["Tone"]
+
+    VOICE["Voice"]
+
+    LANGUAGE["Language"]
+
+    DURATION["Duration"]
+
+    ASPECT_RATIO["Aspect Ratio"]
+
+    MEDIA_TYPE["Media Type"]
+
+    CUSTOM_METADATA["Custom / Unknown Metadata"]
+
+end
+
+SCENE_CREATION --> SCENE
+
+SCENE --> IMAGE_PROMPT
+SCENE --> VIDEO_PROMPT
+SCENE --> VOICEOVER_SCRIPT
+SCENE --> MASTER_PROMPT
+SCENE --> NEGATIVE_PROMPT
+SCENE --> STYLE
+SCENE --> CHARACTER
+SCENE --> CAMERA
+SCENE --> LIGHTING
+SCENE --> TONE
+SCENE --> VOICE
+SCENE --> LANGUAGE
+SCENE --> DURATION
+SCENE --> ASPECT_RATIO
+SCENE --> MEDIA_TYPE
+SCENE --> CUSTOM_METADATA
+
+%% =========================================================
+%% DATABASE
+%% =========================================================
+
+subgraph SUPABASE["SUPABASE"]
+
+    POSTGRES[("PostgreSQL Database")]
+
+    PROFILES_TABLE["profiles"]
+
+    PROJECTS_TABLE["projects"]
+
+    CSV_FILES_TABLE["csv_files"]
+
+    CSV_COLUMNS_TABLE["csv_columns"]
+
+    CSV_ROWS_TABLE["csv_rows / normalized_data"]
+
+    SCENES_TABLE["scenes"]
+
+    JOBS_TABLE["generation_jobs"]
+
+    TASKS_TABLE["generation_tasks"]
+
+    ASSETS_TABLE["assets"]
+
+    API_PROFILES_TABLE["api_profiles"]
+
+    SETTINGS_TABLE["generation_settings"]
+
+    ERRORS_TABLE["error_logs"]
+
+    AUDIT_TABLE["audit_logs"]
+
+end
+
+USER_SERVICE --> PROFILES_TABLE
+PROJECT_SERVICE --> PROJECTS_TABLE
+
+CSV_SERVICE --> CSV_FILES_TABLE
+MAPPING_SERVICE --> CSV_COLUMNS_TABLE
+
+NORMALIZATION_SERVICE --> CSV_ROWS_TABLE
+SCENE_SERVICE --> SCENES_TABLE
+
+GENERATION_SERVICE --> JOBS_TABLE
+TASK_SERVICE --> TASKS_TABLE
+
+ASSET_SERVICE --> ASSETS_TABLE
+
+API_PROFILE_SERVICE --> API_PROFILES_TABLE
+
+ERROR_SERVICE --> ERRORS_TABLE
+AUDIT_SERVICE --> AUDIT_TABLE
+
+POSTGRES --- PROFILES_TABLE
+POSTGRES --- PROJECTS_TABLE
+POSTGRES --- CSV_FILES_TABLE
+POSTGRES --- CSV_COLUMNS_TABLE
+POSTGRES --- CSV_ROWS_TABLE
+POSTGRES --- SCENES_TABLE
+POSTGRES --- JOBS_TABLE
+POSTGRES --- TASKS_TABLE
+POSTGRES --- ASSETS_TABLE
+POSTGRES --- API_PROFILES_TABLE
+POSTGRES --- SETTINGS_TABLE
+POSTGRES --- ERRORS_TABLE
+POSTGRES --- AUDIT_TABLE
+
+%% =========================================================
+%% GENERATION ORCHESTRATION
+%% =========================================================
+
+subgraph ORCHESTRATION["GENERATION ORCHESTRATION"]
+
+    GENERATION_JOB["Generation Job"]
+
+    JOB_PLANNER["Generation Planner"]
+
+    TASK_CREATOR["Task Creator"]
+
+    TASK_QUEUE["Task Queue"]
+
+    TASK_LOCK["Task Lock"]
+
+    IDEMPOTENCY["Idempotency Check"]
+
+end
+
+GENERATION_SERVICE --> GENERATION_JOB
+
+GENERATION_JOB --> JOB_PLANNER
+
+JOB_PLANNER --> TASK_CREATOR
+
+TASK_CREATOR --> IDEMPOTENCY
+
+IDEMPOTENCY -->|"New Task"| TASK_QUEUE
+IDEMPOTENCY -->|"Already Exists"| TASK_LOCK
+
+TASK_QUEUE --> TASK_LOCK
+
+TASK_LOCK --> TASKS_TABLE
+
+%% =========================================================
+%% WORKER SYSTEM
+%% =========================================================
+
+subgraph WORKERS["BACKGROUND WORKER SYSTEM"]
+
+    WORKER_MANAGER["Worker Manager"]
+
+    WORKER_1["Generation Worker"]
+
+    WORKER_2["Generation Worker"]
+
+    WORKER_N["Additional Workers"]
+
+    CONCURRENCY["Concurrency Controller"]
+
+    RATE_LIMITER["Rate Limiter"]
+
+end
+
+TASK_QUEUE --> WORKER_MANAGER
+
+WORKER_MANAGER --> WORKER_1
+WORKER_MANAGER --> WORKER_2
+WORKER_MANAGER --> WORKER_N
+
+WORKER_1 --> CONCURRENCY
+WORKER_2 --> CONCURRENCY
+WORKER_N --> CONCURRENCY
+
+CONCURRENCY --> RATE_LIMITER
+
+RATE_LIMITER --> API_PROFILE_SERVICE
+
+%% =========================================================
+%% API PROFILE MANAGER
+%% =========================================================
+
+subgraph API_MANAGER["GOOGLE AI API PROFILE MANAGER"]
+
+    PROFILE_SELECTOR["Profile Selector"]
+
+    PROFILE_A["Google AI API Profile A"]
+
+    PROFILE_B["Google AI API Profile B"]
+
+    PROFILE_C["Google AI API Profile C"]
+
+    PROFILE_HEALTH["Profile Health"]
+
+    PROFILE_USAGE["Usage / Request Tracking"]
+
+    QUOTA_DETECTOR["Quota Detection"]
+
+    RATE_LIMIT_DETECTOR["Rate Limit Detection"]
+
+    TEMP_DISABLE["Temporary Unavailable State"]
+
+end
+
+API_PROFILE_SERVICE --> PROFILE_SELECTOR
+
+PROFILE_SELECTOR --> PROFILE_A
+PROFILE_SELECTOR --> PROFILE_B
+PROFILE_SELECTOR --> PROFILE_C
+
+PROFILE_A --> PROFILE_HEALTH
+PROFILE_B --> PROFILE_HEALTH
+PROFILE_C --> PROFILE_HEALTH
+
+PROFILE_HEALTH --> PROFILE_USAGE
+
+PROFILE_A --> QUOTA_DETECTOR
+PROFILE_B --> QUOTA_DETECTOR
+PROFILE_C --> QUOTA_DETECTOR
+
+PROFILE_A --> RATE_LIMIT_DETECTOR
+PROFILE_B --> RATE_LIMIT_DETECTOR
+PROFILE_C --> RATE_LIMIT_DETECTOR
+
+QUOTA_DETECTOR --> TEMP_DISABLE
+RATE_LIMIT_DETECTOR --> TEMP_DISABLE
+
+TEMP_DISABLE --> PROFILE_SELECTOR
+
+%% =========================================================
+%% SECRET MANAGEMENT
+%% =========================================================
+
+subgraph SECURITY["SECURITY / SECRET MANAGEMENT"]
+
+    API_KEY_INPUT["API Key Input"]
+
+    ENCRYPTION["Server-side Encryption"]
+
+    SECRET_STORAGE["Encrypted API Key Storage"]
+
+    DECRYPT["Server-side Decryption"]
+
+    NO_FRONTEND["Never Expose Raw Key to Frontend"]
+
+end
+
+API_PROFILE_UI --> API_KEY_INPUT
+API_KEY_INPUT --> ENCRYPTION
+ENCRYPTION --> SECRET_STORAGE
+SECRET_STORAGE --> API_PROFILES_TABLE
+
+PROFILE_SELECTOR --> DECRYPT
+DECRYPT --> PROFILE_A
+DECRYPT --> PROFILE_B
+DECRYPT --> PROFILE_C
+
+SECRET_STORAGE --> NO_FRONTEND
+
+%% =========================================================
+%% PROMPT ENGINE
+%% =========================================================
+
+subgraph PROMPT_ENGINE["DYNAMIC PROMPT ENGINE"]
+
+    PROMPT_INPUT["Scene + CSV Data"]
+
+    MASTER_BUILDER["Master Prompt"]
+
+    SCENE_BUILDER["Scene Prompt"]
+
+    STYLE_BUILDER["Style / Character / Camera"]
+
+    AUDIO_BUILDER["Voice / Tone / Language"]
+
+    VIDEO_BUILDER["Video Settings"]
+
+    PROMPT_COMPOSER["Prompt Composer"]
+
+    FINAL_IMAGE_PROMPT["Final Image Prompt"]
+
+    FINAL_VOICE_REQUEST["Final Voice Request"]
+
+    FINAL_VIDEO_PROMPT["Final Video Prompt"]
+
+end
+
+SCENE --> PROMPT_INPUT
+
+PROMPT_INPUT --> MASTER_BUILDER
+PROMPT_INPUT --> SCENE_BUILDER
+PROMPT_INPUT --> STYLE_BUILDER
+PROMPT_INPUT --> AUDIO_BUILDER
+PROMPT_INPUT --> VIDEO_BUILDER
+
+MASTER_BUILDER --> PROMPT_COMPOSER
+SCENE_BUILDER --> PROMPT_COMPOSER
+STYLE_BUILDER --> PROMPT_COMPOSER
+AUDIO_BUILDER --> PROMPT_COMPOSER
+VIDEO_BUILDER --> PROMPT_COMPOSER
+
+PROMPT_COMPOSER --> FINAL_IMAGE_PROMPT
+PROMPT_COMPOSER --> FINAL_VOICE_REQUEST
+PROMPT_COMPOSER --> FINAL_VIDEO_PROMPT
+
+WORKER_1 --> PROMPT_INPUT
+WORKER_2 --> PROMPT_INPUT
+WORKER_N --> PROMPT_INPUT
+
+%% =========================================================
+%% AI PROVIDER ABSTRACTION
+%% =========================================================
+
+subgraph AI_ABSTRACTION["AI PROVIDER ABSTRACTION"]
+
+    PROVIDER_INTERFACE["AI Provider Interface"]
+
+    GOOGLE_PROVIDER["Google AI Provider"]
+
+    FUTURE_PROVIDER["Future AI Provider"]
+
+end
+
+PROVIDER_SERVICE --> PROVIDER_INTERFACE
+
+PROVIDER_INTERFACE --> GOOGLE_PROVIDER
+PROVIDER_INTERFACE --> FUTURE_PROVIDER
+
+FINAL_IMAGE_PROMPT --> GOOGLE_PROVIDER
+FINAL_VOICE_REQUEST --> GOOGLE_PROVIDER
+FINAL_VIDEO_PROMPT --> GOOGLE_PROVIDER
+
+%% =========================================================
+%% GOOGLE AI SERVICES
+%% =========================================================
+
+subgraph GOOGLE_AI["GOOGLE AI SERVICES"]
+
+    IMAGE_GENERATION["AI Image Generation"]
+
+    TTS["AI Text-to-Speech"]
+
+    VIDEO_GENERATION["AI Video Generation"]
+
+end
+
+GOOGLE_PROVIDER --> IMAGE_GENERATION
+GOOGLE_PROVIDER --> TTS
+GOOGLE_PROVIDER --> VIDEO_GENERATION
+
+%% =========================================================
+%% GENERATED MEDIA
+%% =========================================================
+
+subgraph MEDIA["GENERATED MEDIA"]
+
+    IMAGE_OUTPUT["Generated Images"]
+
+    AUDIO_OUTPUT["Generated Voiceovers"]
+
+    VIDEO_OUTPUT["Generated Videos"]
+
+end
+
+IMAGE_GENERATION --> IMAGE_OUTPUT
+TTS --> AUDIO_OUTPUT
+VIDEO_GENERATION --> VIDEO_OUTPUT
+
+%% =========================================================
+%% OBJECT STORAGE
+%% =========================================================
+
+subgraph OBJECT_STORAGE["EXTERNAL OBJECT / MEDIA STORAGE"]
+
+    IMAGE_BUCKET["Images"]
+
+    AUDIO_BUCKET["Voiceovers"]
+
+    VIDEO_BUCKET["Videos"]
+
+end
+
+IMAGE_OUTPUT --> IMAGE_BUCKET
+AUDIO_OUTPUT --> AUDIO_BUCKET
+VIDEO_OUTPUT --> VIDEO_BUCKET
+
+STORAGE_SERVICE --> IMAGE_BUCKET
+STORAGE_SERVICE --> AUDIO_BUCKET
+STORAGE_SERVICE --> VIDEO_BUCKET
+
+%% =========================================================
+%% ASSET METADATA
+%% =========================================================
+
+IMAGE_BUCKET --> ASSET_SERVICE
+AUDIO_BUCKET --> ASSET_SERVICE
+VIDEO_BUCKET --> ASSET_SERVICE
+
+ASSET_SERVICE --> ASSETS_TABLE
+
+%% =========================================================
+%% TASK STATE MACHINE
+%% =========================================================
+
+subgraph STATE_MACHINE["GENERATION TASK STATE MACHINE"]
+
+    PENDING["PENDING"]
+
+    QUEUED["QUEUED"]
+
+    PROCESSING["PROCESSING"]
+
+    COMPLETED["COMPLETED"]
+
+    FAILED["FAILED"]
+
+    RETRYING["RETRYING"]
+
+    CANCELLED["CANCELLED"]
+
+    UNSUPPORTED["UNSUPPORTED"]
+
+end
+
+TASKS_TABLE --> PENDING
+
+PENDING --> QUEUED
+QUEUED --> PROCESSING
+
+PROCESSING --> COMPLETED
+PROCESSING --> FAILED
+
+FAILED --> RETRYING
+RETRYING --> QUEUED
+
+PROCESSING --> CANCELLED
+PENDING --> CANCELLED
+
+PROCESSING --> UNSUPPORTED
+
+COMPLETED --> ASSETS_TABLE
+
+%% =========================================================
+%% ERROR & RECOVERY
+%% =========================================================
+
+subgraph ERROR_SYSTEM["ERROR & RECOVERY SYSTEM"]
+
+    ERROR_DETECTION["Error Detection"]
+
+    ERROR_CLASSIFIER["Error Classifier"]
+
+    AUTH_ERROR["Invalid API Key"]
+
+    QUOTA_ERROR["Quota Exceeded"]
+
+    RATE_ERROR["Rate Limited"]
+
+    NETWORK_ERROR["Network Error"]
+
+    TIMEOUT_ERROR["Timeout"]
+
+    PROVIDER_ERROR["Provider Error"]
+
+    STORAGE_ERROR["Storage Error"]
+
+    DATABASE_ERROR["Database Error"]
+
+    RETRY_POLICY["Retry Policy"]
+
+end
+
+WORKER_MANAGER --> ERROR_DETECTION
+
+ERROR_DETECTION --> ERROR_CLASSIFIER
+
+ERROR_CLASSIFIER --> AUTH_ERROR
+ERROR_CLASSIFIER --> QUOTA_ERROR
+ERROR_CLASSIFIER --> RATE_ERROR
+ERROR_CLASSIFIER --> NETWORK_ERROR
+ERROR_CLASSIFIER --> TIMEOUT_ERROR
+ERROR_CLASSIFIER --> PROVIDER_ERROR
+ERROR_CLASSIFIER --> STORAGE_ERROR
+ERROR_CLASSIFIER --> DATABASE_ERROR
+
+NETWORK_ERROR --> RETRY_POLICY
+TIMEOUT_ERROR --> RETRY_POLICY
+PROVIDER_ERROR --> RETRY_POLICY
+RATE_ERROR --> RETRY_POLICY
+
+RETRY_POLICY --> RETRYING
+
+ERROR_CLASSIFIER --> ERRORS_TABLE
+
+%% =========================================================
+%% REALTIME SYNCHRONIZATION
+%% =========================================================
+
+subgraph REALTIME["REAL-TIME SYNCHRONIZATION"]
+
+    DB_CHANGE["Database State Change"]
+
+    REALTIME_ENGINE["Supabase Realtime"]
+
+    EVENT["Realtime Event"]
+
+    FRONTEND_STORE["Frontend State Store"]
+
+end
+
+TASKS_TABLE --> DB_CHANGE
+ASSETS_TABLE --> DB_CHANGE
+JOBS_TABLE --> DB_CHANGE
+
+DB_CHANGE --> REALTIME_ENGINE
+REALTIME_ENGINE --> EVENT
+EVENT --> FRONTEND_STORE
+
+FRONTEND_STORE --> PROGRESS_UI
+FRONTEND_STORE --> TASK_UI
+FRONTEND_STORE --> ASSET_UI
+FRONTEND_STORE --> GENERATION_UI
+
+%% =========================================================
+%% PROGRESS SYSTEM
+%% =========================================================
+
+subgraph PROGRESS["LIVE PROGRESS ENGINE"]
+
+    TOTAL_TASKS["Total Tasks"]
+
+    PENDING_TASKS["Pending"]
+
+    ACTIVE_TASKS["Processing"]
+
+    COMPLETED_TASKS["Completed"]
+
+    FAILED_TASKS["Failed"]
+
+    PROGRESS_CALCULATOR["Progress Calculator"]
+
+    PERCENTAGE["Overall Percentage"]
+
+end
+
+TASKS_TABLE --> TOTAL_TASKS
+TASKS_TABLE --> PENDING_TASKS
+TASKS_TABLE --> ACTIVE_TASKS
+TASKS_TABLE --> COMPLETED_TASKS
+TASKS_TABLE --> FAILED_TASKS
+
+TOTAL_TASKS --> PROGRESS_CALCULATOR
+PENDING_TASKS --> PROGRESS_CALCULATOR
+ACTIVE_TASKS --> PROGRESS_CALCULATOR
+COMPLETED_TASKS --> PROGRESS_CALCULATOR
+FAILED_TASKS --> PROGRESS_CALCULATOR
+
+PROGRESS_CALCULATOR --> PERCENTAGE
+PERCENTAGE --> PROGRESS_SERVICE
+PROGRESS_SERVICE --> PROGRESS_UI
+
+%% =========================================================
+%% COMPLETION INDICATOR
+%% =========================================================
+
+subgraph COMPLETION["ASSET COMPLETION"]
+
+    VERIFY_OUTPUT["Verify Generated Output"]
+
+    VERIFY_STORAGE["Verify Storage"]
+
+    VERIFY_METADATA["Verify Metadata"]
+
+    BLUE_CHECK["🔵 BLUE ✓"]
+
+end
+
+COMPLETED --> VERIFY_OUTPUT
+VERIFY_OUTPUT --> VERIFY_STORAGE
+VERIFY_STORAGE --> VERIFY_METADATA
+VERIFY_METADATA --> BLUE_CHECK
+
+BLUE_CHECK --> ASSET_UI
+BLUE_CHECK --> PROGRESS_UI
+
+%% =========================================================
+%% ASSET MANAGEMENT
+%% =========================================================
+
+subgraph ASSET_MANAGEMENT["ASSET MANAGEMENT"]
+
+    ASSET_INDEX["Asset Index"]
+
+    IMAGE_ASSETS["Image Assets"]
+
+    AUDIO_ASSETS["Voiceover Assets"]
+
+    VIDEO_ASSETS["Video Assets"]
+
+    SEARCH["Search"]
+
+    FILTER["Filter"]
+
+    SORT["Sort"]
+
+    PAGINATION["Pagination"]
+
+    SELECTION["Multi-select"]
+
+end
+
+ASSETS_TABLE --> ASSET_INDEX
+
+ASSET_INDEX --> IMAGE_ASSETS
+ASSET_INDEX --> AUDIO_ASSETS
+ASSET_INDEX --> VIDEO_ASSETS
+
+ASSET_UI --> SEARCH
+ASSET_UI --> FILTER
+ASSET_UI --> SORT
+ASSET_UI --> PAGINATION
+ASSET_UI --> SELECTION
+
+%% =========================================================
+%% EXPORT SYSTEM
+%% =========================================================
+
+subgraph EXPORT["EXPORT SYSTEM"]
+
+    SELECT_ASSET["Select Individual Assets"]
+
+    SELECT_SCENE["Select Scenes"]
+
+    SELECT_FOLDER["Select Folder / Category"]
+
+    SELECT_PROJECT["Select Entire Project"]
+
+    EXPORT_PLANNER["Export Planner"]
+
+    EXPORT_JOB["Export Job"]
+
+    PACKAGE["Package / ZIP"]
+
+    DOWNLOAD["Download / Export"]
+
+end
+
+SELECTION --> SELECT_ASSET
+SELECTION --> SELECT_SCENE
+SELECTION --> SELECT_FOLDER
+SELECTION --> SELECT_PROJECT
+
+SELECT_ASSET --> EXPORT_PLANNER
+SELECT_SCENE --> EXPORT_PLANNER
+SELECT_FOLDER --> EXPORT_PLANNER
+SELECT_PROJECT --> EXPORT_PLANNER
+
+EXPORT_PLANNER --> EXPORT_JOB
+EXPORT_JOB --> PACKAGE
+PACKAGE --> DOWNLOAD
+
+EXPORT_SERVICE --> EXPORT_PLANNER
+DOWNLOAD --> EXPORT_UI
+
+%% =========================================================
+%% AUDIT & LOGGING
+%% =========================================================
+
+subgraph OBSERVABILITY["LOGGING / MONITORING / AUDIT"]
+
+    STRUCTURED_LOGS["Structured Logs"]
+
+    ERROR_LOGS["Error Logs"]
+
+    AUDIT_LOGS["Audit Logs"]
+
+    METRICS["System Metrics"]
+
+    API_METRICS["API Metrics"]
+
+    WORKER_METRICS["Worker Metrics"]
+
+    GENERATION_METRICS["Generation Metrics"]
+
+end
+
+API --> STRUCTURED_LOGS
+WORKER_MANAGER --> STRUCTURED_LOGS
+
+ERROR_SERVICE --> ERROR_LOGS
+AUDIT_SERVICE --> AUDIT_LOGS
+
+STRUCTURED_LOGS --> METRICS
+METRICS --> API_METRICS
+METRICS --> WORKER_METRICS
+METRICS --> GENERATION_METRICS
+
+ERROR_LOGS --> ERRORS_TABLE
+AUDIT_LOGS --> AUDIT_TABLE
+
+%% =========================================================
+%% HEALTH MONITORING
+%% =========================================================
+
+subgraph HEALTH["SYSTEM HEALTH"]
+
+    API_HEALTH["FastAPI Health"]
+
+    DB_HEALTH["Database Health"]
+
+    WORKER_HEALTH["Worker Health"]
+
+    AI_HEALTH["AI Provider Health"]
+
+    STORAGE_HEALTH["Storage Health"]
+
+    SYSTEM_STATUS["Overall System Status"]
+
+end
+
+HEALTH_API --> API_HEALTH
+HEALTH_API --> DB_HEALTH
+HEALTH_API --> WORKER_HEALTH
+HEALTH_API --> AI_HEALTH
+HEALTH_API --> STORAGE_HEALTH
+
+API_HEALTH --> SYSTEM_STATUS
+DB_HEALTH --> SYSTEM_STATUS
+WORKER_HEALTH --> SYSTEM_STATUS
+AI_HEALTH --> SYSTEM_STATUS
+STORAGE_HEALTH --> SYSTEM_STATUS
+
+%% =========================================================
+%% DEPLOYMENT
+%% =========================================================
+
+subgraph DEPLOYMENT["PRODUCTION DEPLOYMENT"]
+
+    WEB_HOST["Frontend Hosting"]
+
+    API_HOST["FastAPI Server"]
+
+    WORKER_HOST["Worker Server"]
+
+    SUPABASE_HOST["Supabase"]
+
+    STORAGE_HOST["Object Storage"]
+
+    GOOGLE_HOST["Google AI APIs"]
+
+end
+
+FRONTEND --> WEB_HOST
+API --> API_HOST
+
+WORKER_MANAGER --> WORKER_HOST
+
+POSTGRES --> SUPABASE_HOST
+AUTH_DB --> SUPABASE_HOST
+
+IMAGE_BUCKET --> STORAGE_HOST
+AUDIO_BUCKET --> STORAGE_HOST
+VIDEO_BUCKET --> STORAGE_HOST
+
+GOOGLE_PROVIDER --> GOOGLE_HOST

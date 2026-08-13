@@ -4,9 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - AI Content Studio</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/env.js" defer></script>
+    <script src="/config.js" defer></script>
     <script src="/static/js/app.js" defer></script>
 </head>
 <body>
@@ -73,6 +76,26 @@
                     </div>
                 </div>
 
+                <!-- Generated media counters (§54) -->
+                <div class="stats-grid">
+                    <div class="stat-card blue">
+                        <div class="stat-label">🖼️ Images Generated</div>
+                        <div class="stat-value blue" id="statImages">0</div>
+                    </div>
+                    <div class="stat-card purple">
+                        <div class="stat-label">🎙️ Voiceovers Generated</div>
+                        <div class="stat-value purple" id="statVoiceovers">0</div>
+                    </div>
+                    <div class="stat-card green">
+                        <div class="stat-label">🎬 Videos Generated</div>
+                        <div class="stat-value green" id="statVideos">0</div>
+                    </div>
+                    <div class="stat-card purple">
+                        <div class="stat-label">⏳ Processing / Pending Tasks</div>
+                        <div class="stat-value purple" id="statTasks">0 / 0</div>
+                    </div>
+                </div>
+
                 <!-- Quick Actions & System Health -->
                 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
                     <div class="glass-panel" style="padding: 1.5rem;">
@@ -89,14 +112,27 @@
                         <h3>System & API Health</h3>
                         <div class="mt-3 flex flex-column gap-2" id="healthWidget">
                             <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
-                                <span>FastAPI Backend:</span> <span class="badge badge-success">OK</span>
+                                <span>FastAPI backend:</span> <span id="healthApi" class="badge badge-secondary">Checking…</span>
                             </div>
                             <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
-                                <span>Supabase Auth & DB:</span> <span class="badge badge-success">Connected</span>
+                                <span>Supabase database:</span> <span id="healthDb" class="badge badge-secondary">Checking…</span>
                             </div>
                             <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
-                                <span>Google AI Profile:</span> <span id="apiStatusBadge" class="badge badge-secondary">Checking...</span>
+                                <span>Media storage:</span> <span id="healthStorage" class="badge badge-secondary">Checking…</span>
                             </div>
+                            <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
+                                <span>Worker:</span> <span id="healthWorker" class="badge badge-secondary">Checking…</span>
+                            </div>
+                            <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
+                                <span>FFmpeg (video merge):</span> <span id="healthFfmpeg" class="badge badge-secondary">Checking…</span>
+                            </div>
+                            <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
+                                <span>Google AI profile:</span> <span id="apiStatusBadge" class="badge badge-secondary">Checking…</span>
+                            </div>
+                            <div class="flex justify-between items-center text-muted" style="font-size:0.85rem;">
+                                <span>Database schema:</span> <span id="healthSchema" class="badge badge-secondary">Checking…</span>
+                            </div>
+                            <div id="schemaDetail" class="text-danger mt-2 hidden" style="font-size:0.78rem;"></div>
                         </div>
                     </div>
                 </div>
@@ -132,70 +168,128 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const user = await Auth.requireAuth();
+            const user = await Shell.init();
             if (!user) return;
 
-            document.getElementById('userEmail').textContent = user.email;
+            await Promise.all([loadDashboardData(), loadHealth()]);
+            // Keep the dashboard live while a batch is running (§53 — all values from the API).
+            setInterval(() => {
+                if (document.visibilityState === 'visible') loadDashboardData();
+            }, 10000);
+        });
 
-            document.getElementById('logoutBtn').addEventListener('click', async (e) => {
-                e.preventDefault();
-                await Auth.signOut();
-                window.location.href = '/login.html';
-            });
+        async function loadDashboardData() {
+            try {
+                // Both calls are independent — issue them together instead of
+                // paying two sequential round trips.
+                const [stats, projects] = await Promise.all([
+                    API.get('/api/projects/stats'),
+                    API.get('/api/projects'),
+                ]);
+                document.getElementById('statProjects').textContent = stats.total_projects || 0;
+                document.getElementById('statActiveJobs').textContent = stats.active_jobs || 0;
+                document.getElementById('statCompleted').textContent = stats.completed_scenes || 0;
+                document.getElementById('statFailed').textContent = stats.failed_scenes || 0;
+                document.getElementById('statImages').textContent = stats.images_generated || 0;
+                document.getElementById('statVoiceovers').textContent = stats.voiceovers_generated || 0;
+                document.getElementById('statVideos').textContent = stats.videos_generated || 0;
+                document.getElementById('statTasks').textContent =
+                    `${stats.processing_tasks || 0} / ${stats.pending_tasks || 0}`;
 
-            // Load Dashboard Statistics & Recent Projects
-            async function loadDashboardData() {
-                try {
-                    // Fetch real dynamic SQL stats from backend
-                    const stats = await API.get('/api/projects/stats');
-                    document.getElementById('statProjects').textContent = stats.total_projects || 0;
-                    document.getElementById('statActiveJobs').textContent = stats.active_jobs || 0;
-                    document.getElementById('statCompleted').textContent = stats.completed_scenes || 0;
-                    document.getElementById('statFailed').textContent = stats.failed_scenes || 0;
+                const apiBadge = document.getElementById('apiStatusBadge');
+                apiBadge.className = `badge ${stats.api_configured ? 'badge-success' : 'badge-danger'}`;
+                apiBadge.textContent = stats.api_configured
+                    ? `${stats.api_profile_count} profile(s)`
+                    : 'Not configured';
 
-                    const apiBadge = document.getElementById('apiStatusBadge');
-                    if (stats.api_configured) {
-                        apiBadge.className = 'badge badge-success';
-                        apiBadge.textContent = 'Active';
-                    } else {
-                        apiBadge.className = 'badge badge-danger';
-                        apiBadge.textContent = 'Not Configured';
-                    }
+                const body = document.getElementById('projectsTableBody');
+                body.innerHTML = projects.length
+                    ? projects.slice(0, 5).map(p => `
+                        <tr>
+                            <td><strong>${Fmt.esc(p.name)}</strong></td>
+                            <td>${Status.badge(p.worker_active ? 'PROCESSING' : p.status)}</td>
+                            <td>${p.completed_scenes || 0} / ${p.total_scenes || 0}</td>
+                            <td>${Fmt.date(p.created_at)}</td>
+                            <td><a href="/project-detail.html?id=${p.id}" class="btn btn-secondary btn-sm">Open Workspace</a></td>
+                        </tr>`).join('')
+                    : '<tr><td colspan="5" class="text-muted text-center">No projects yet. Create your first project to get started.</td></tr>';
+            } catch (err) {
+                // Every placeholder must resolve, including the badges (§19).
+                const badge = document.getElementById('apiStatusBadge');
+                badge.className = 'badge badge-danger';
+                badge.textContent = 'Unavailable';
 
-                    // Fetch recent projects list
-                    const projects = await API.get('/api/projects');
-                    const projectsTableBody = document.getElementById('projectsTableBody');
-                    
-                    if (!projects || projects.length === 0) {
-                        projectsTableBody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No projects found. Create your first project to get started.</td></tr>';
-                    } else {
-                        projectsTableBody.innerHTML = projects.slice(0, 5).map(p => {
-                            const statusCls = (p.status === 'COMPLETED' || p.status === 'completed') ? 'badge-success'
-                                : (p.status === 'PROCESSING' || p.status === 'generating') ? 'badge-warning'
-                                : (p.status === 'FAILED' || p.status === 'failed') ? 'badge-danger'
-                                : 'badge-secondary';
+                document.getElementById('projectsTableBody').innerHTML = `
+                    <tr><td colspan="5">
+                        <div class="text-danger">Could not load dashboard data</div>
+                        <div class="text-muted mt-1" style="font-size:0.85rem;">${Fmt.esc(err.message)}</div>
+                        <button class="btn btn-secondary btn-sm mt-2" onclick="loadDashboardData()">↻ Retry</button>
+                    </td></tr>`;
+                Toast.error(`Dashboard failed to load: ${err.message}`);
+            }
+        }
 
-                            return `
-                                <tr>
-                                    <td><strong>${p.name}</strong></td>
-                                    <td><span class="badge ${statusCls}">${p.status || 'PENDING'}</span></td>
-                                    <td>${p.completed_scenes || 0} / ${p.total_scenes || 0}</td>
-                                    <td>${new Date(p.created_at).toLocaleDateString()}</td>
-                                    <td>
-                                        <a href="/project-detail.html?id=${p.id}" class="btn btn-secondary btn-sm">Open Workspace</a>
-                                    </td>
-                                </tr>
-                            `;
-                        }).join('');
-                    }
+        async function loadHealth() {
+            const set = (id, ok, label) => {
+                const el = document.getElementById(id);
+                el.className = `badge ${ok ? 'badge-success' : 'badge-danger'}`;
+                el.textContent = label;
+            };
+            try {
+                const health = await fetch(`${window.API_BASE_URL || ''}/api/health/detailed`).then(r => r.json());
+                set('healthApi', health.api?.status === 'ok', health.api?.status === 'ok' ? 'OK' : 'Error');
+                set('healthDb', health.database?.status === 'ok', health.database?.status === 'ok' ? 'Connected' : 'Error');
+                set('healthStorage', health.storage?.status === 'ok', health.storage?.status === 'ok' ? 'Writable' : 'Error');
+                set('healthWorker', true, `${health.worker?.active_jobs ?? 0} active job(s)`);
+                const ffmpeg = health.ffmpeg?.status === 'ok';
+                const ffmpegBadge = document.getElementById('healthFfmpeg');
+                ffmpegBadge.className = `badge ${ffmpeg ? 'badge-success' : 'badge-secondary'}`;
+                ffmpegBadge.textContent = ffmpeg ? 'Available' : 'Not installed';
 
-                } catch(e) {
-                    console.error("Dashboard error:", e);
+                if (!health.worker?.can_persist_results) {
+                    const el = document.getElementById('healthWorker');
+                    el.className = 'badge badge-danger';
+                    el.textContent = 'Cannot save results';
                 }
+            } catch {
+                ['healthApi', 'healthDb', 'healthStorage', 'healthWorker', 'healthFfmpeg'].forEach(id => {
+                    const el = document.getElementById(id);
+                    el.className = 'badge badge-danger';
+                    el.textContent = 'Unreachable';
+                });
             }
 
-            loadDashboardData();
-        });
+            // A stale schema is the most common cause of 500s, so surface it here.
+            // Deliberately not awaited by the caller: the first check probes every
+            // column and takes a few seconds, and the rest of the dashboard must
+            // not wait for it. Subsequent loads are served from a server cache.
+            loadSchemaHealth();
+        }
+
+        async function loadSchemaHealth() {
+            const schemaBadge = document.getElementById('healthSchema');
+            const schemaDetail = document.getElementById('schemaDetail');
+            try {
+                const schema = await API.get('/api/health/schema', { timeout: 60000 });
+                if (schema.status === 'ok') {
+                    schemaBadge.className = 'badge badge-success';
+                    schemaBadge.textContent = 'Up to date';
+                    schemaDetail.classList.add('hidden');
+                } else {
+                    schemaBadge.className = 'badge badge-danger';
+                    schemaBadge.textContent = 'Out of date';
+                    const tables = (schema.missing_tables || []).map(t => `table ${t}`);
+                    const columns = Object.entries(schema.missing_columns || {})
+                        .map(([table, cols]) => `${table}.${cols.join(', ' + table + '.')}`);
+                    schemaDetail.innerHTML =
+                        `Missing: ${Fmt.esc([...tables, ...columns].join(' · '))}<br>${Fmt.esc(schema.action || '')}`;
+                    schemaDetail.classList.remove('hidden');
+                }
+            } catch (err) {
+                schemaBadge.className = 'badge badge-secondary';
+                schemaBadge.textContent = 'Unknown';
+            }
+        }
     </script>
 </body>
 </html>
