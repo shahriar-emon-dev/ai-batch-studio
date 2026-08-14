@@ -1,7 +1,6 @@
-# Only the static frontend is deployed to Vercel.
-# The FastAPI backend and generation worker run on Render.
+# The deployment contains both the static frontend and the FastAPI function,
+# so `backend/` and `requirements.txt` must NOT be excluded.
 
-backend/
 tests/
 venv/
 output/
@@ -9,12 +8,12 @@ uploads/
 __pycache__/
 *.pyc
 
-requirements.txt
 render.yaml
 supabase_schema.sql
 sample.csv
 proposal.txt
 implementation_plan.md
+DEPLOYMENT.md
 *.pdf
 
 .env

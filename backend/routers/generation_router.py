@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.auth import get_token, verify_token
+from backend.config import settings
 from backend.database import get_admin_client, get_db_client, is_service_role_configured
 from backend.services import task_service
 from backend.services.api_profile_service import load_profile_pool
@@ -41,8 +42,28 @@ def _assert_project_access(client, project_id: Any) -> Dict[str, Any]:
     return result.data[0]
 
 
+def _assert_worker_can_run() -> None:
+    """Refuse to start a batch the host cannot actually finish (§56, §61).
+
+    On a serverless host the process is killed as soon as the response is sent,
+    so the queue would stop after the first task and leave every scene stuck in
+    PROCESSING. Saying so is better than appearing to work.
+    """
+    if settings.serverless_mode:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "This deployment runs on serverless functions, which are stopped as soon as a "
+                "request finishes, so batch generation cannot run here. Browsing projects, CSV "
+                "import, assets and export all work. Run the backend on a host that keeps a "
+                "process alive (Render/Railway/your own machine) to generate media."
+            ),
+        )
+
+
 def _assert_worker_can_write() -> None:
     """A job that cannot persist its results must not appear to start (§56, §61)."""
+    _assert_worker_can_run()
     if not is_service_role_configured():
         raise HTTPException(
             status_code=503,
@@ -75,14 +96,23 @@ def _load_pool(client, user_id: str):
 
 
 def _fetch_scenes(client, project_id: Any, scene_ids=None, only_failed=False) -> List[Dict[str, Any]]:
+    """Scenes that still need work.
+
+    Status filtering happens in Python, not in the query. `overall_status` is a
+    Postgres enum in databases created by older revisions, and sending a value
+    that is not a member of that enum makes the whole query fail rather than
+    simply matching nothing.
+    """
     query = client.table("scenes").select("*").eq("project_id", project_id)
     if scene_ids:
         query = query.in_("id", scene_ids)
-    elif only_failed:
-        query = query.in_("overall_status", ["FAILED", "failed"])
-    else:
-        query = query.in_("overall_status", RESUMABLE_SCENE_STATUSES)
-    return query.order("id").execute().data or []
+    scenes = query.order("id").execute().data or []
+
+    if scene_ids:
+        return scenes
+
+    wanted = {"failed"} if only_failed else {s.lower() for s in RESUMABLE_SCENE_STATUSES}
+    return [s for s in scenes if str(s.get("overall_status") or "PENDING").lower() in wanted]
 
 
 async def resolve_project_id(job_id: Union[int, str], client) -> str:

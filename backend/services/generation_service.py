@@ -150,11 +150,40 @@ def sync_scene_state(scene_id: Any) -> Dict[str, Any]:
             updates[column] = task.get("storage_path")
 
     updates["updated_at"] = _now_iso()
+    _write_scene_state(client, scene_id, updates)
+    return updates
+
+
+# Databases created by older revisions type the scene status columns as the
+# `scene_status` enum, which has no UNSUPPORTED or CANCELLED member. Writing one
+# aborts the whole update, so fall back to the nearest valid member. The precise
+# value is still kept on generation_tasks.status, which is free text.
+ENUM_SAFE_SCENE_STATUS = {"UNSUPPORTED": "SKIPPED", "CANCELLED": "SKIPPED", "RETRYING": "PROCESSING", "QUEUED": "PENDING"}
+STATUS_COLUMNS = ("visual_status", "voice_status", "video_status", "merge_status", "overall_status")
+
+
+def _write_scene_state(client, scene_id: Any, updates: Dict[str, Any]) -> None:
     try:
         client.table("scenes").update(updates).eq("id", scene_id).execute()
+        return
     except Exception as exc:
-        logger.error("Could not update scene %s: %s", scene_id, exc)
-    return updates
+        if "invalid input value for enum" not in str(exc):
+            logger.error("Could not update scene %s: %s", scene_id, exc)
+            return
+
+    safe = dict(updates)
+    for column in STATUS_COLUMNS:
+        value = safe.get(column)
+        if value in ENUM_SAFE_SCENE_STATUS:
+            safe[column] = ENUM_SAFE_SCENE_STATUS[value]
+    try:
+        client.table("scenes").update(safe).eq("id", scene_id).execute()
+        logger.info(
+            "Scene %s written with enum-safe statuses; run supabase_schema.sql to widen the "
+            "status columns to VARCHAR and keep the exact values.", scene_id
+        )
+    except Exception as exc:
+        logger.error("Could not update scene %s even with safe statuses: %s", scene_id, exc)
 
 
 async def update_job_progress(job_id: Optional[int], project_id: Any) -> Dict[str, Any]:

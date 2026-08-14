@@ -13,3 +13,6 @@ Thumbs.db
 
 .vercel
 .env*
+
+# Personal document, not part of the project
+User Safety Report*.pdf

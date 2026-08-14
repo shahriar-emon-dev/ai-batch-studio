@@ -30,10 +30,15 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting AI ContentStudio API")
-    try:
-        await recover_pending_jobs()
-    except Exception as exc:  # startup must not be blocked by recovery
-        logger.error("Job recovery failed at startup: %s", exc)
+    if settings.serverless_mode:
+        # Every invocation gets an empty /tmp, so reconciliation would read that
+        # as "all media lost" and wipe the asset rows. Skip it entirely.
+        logger.info("Serverless mode: skipping job recovery and media reconciliation")
+    else:
+        try:
+            await recover_pending_jobs()
+        except Exception as exc:  # startup must not be blocked by recovery
+            logger.error("Job recovery failed at startup: %s", exc)
     yield
     logger.info("Shutting down AI ContentStudio API")
 

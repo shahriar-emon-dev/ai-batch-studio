@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     # Merge still image + voiceover into an MP4 when FFmpeg is present
     merge_enabled: bool = Field(default=True, validation_alias="MERGE_ENABLED")
 
+    # Serverless hosts (Vercel/Lambda) kill the process once a response is sent
+    # and give every invocation a fresh empty /tmp. Two behaviours must change:
+    #   * startup reconciliation must NOT run — it would see an empty media dir
+    #     and delete every asset row in the database;
+    #   * batch generation must be refused rather than started and silently
+    #     killed mid-run.
+    serverless_mode: bool = Field(default=False, validation_alias="SERVERLESS_MODE")
+
     # FFmpeg
     ffmpeg_path: str = Field(default="ffmpeg", validation_alias="FFMPEG_PATH")
 
@@ -78,6 +86,10 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        # Vercel/AWS set these automatically; no manual flag needed.
+        if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            self.serverless_mode = True
 
         def absolute(path: str) -> str:
             return os.path.normpath(path if os.path.isabs(path) else os.path.join(self.base_dir, path))

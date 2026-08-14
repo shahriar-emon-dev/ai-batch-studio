@@ -327,6 +327,48 @@ ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NU
 ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS scene_id INTEGER;
 ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS scene_number VARCHAR(50);
 
+-- 7.0b Widen status columns from enums to VARCHAR.
+-- Older revisions typed these as the `scene_status` / `project_status` enums,
+-- which have no UNSUPPORTED, CANCELLED, QUEUED or RETRYING member. Any write of
+-- one of those values fails, and any *query* filtering on one fails too, which
+-- takes down "Start Batch Generation" entirely. The application treats these as
+-- free text, matching the CREATE TABLE definitions above.
+DO $$
+DECLARE
+    target RECORD;
+BEGIN
+    FOR target IN
+        SELECT c.table_name, c.column_name
+        FROM information_schema.columns c
+        WHERE c.table_schema = 'public'
+          AND c.data_type = 'USER-DEFINED'
+          AND (
+                (c.table_name = 'scenes'   AND c.column_name IN
+                    ('overall_status','visual_status','voice_status','video_status','merge_status'))
+             OR (c.table_name = 'projects' AND c.column_name = 'status')
+             OR (c.table_name = 'generation_jobs' AND c.column_name = 'status')
+             OR (c.table_name = 'generation_tasks' AND c.column_name IN ('status','task_type'))
+             OR (c.table_name = 'activity_logs' AND c.column_name = 'level')
+          )
+    LOOP
+        EXECUTE format(
+            'ALTER TABLE %I ALTER COLUMN %I DROP DEFAULT, '
+            'ALTER COLUMN %I TYPE VARCHAR(50) USING %I::text',
+            target.table_name, target.column_name, target.column_name, target.column_name
+        );
+        RAISE NOTICE 'widened %.% to VARCHAR(50)', target.table_name, target.column_name;
+    END LOOP;
+END $$;
+
+-- Restore the defaults dropped above.
+ALTER TABLE scenes          ALTER COLUMN overall_status SET DEFAULT 'PENDING';
+ALTER TABLE scenes          ALTER COLUMN visual_status  SET DEFAULT 'PENDING';
+ALTER TABLE scenes          ALTER COLUMN voice_status   SET DEFAULT 'PENDING';
+ALTER TABLE scenes          ALTER COLUMN video_status   SET DEFAULT 'PENDING';
+ALTER TABLE projects        ALTER COLUMN status         SET DEFAULT 'PENDING';
+ALTER TABLE generation_jobs ALTER COLUMN status         SET DEFAULT 'PENDING';
+ALTER TABLE activity_logs   ALTER COLUMN level          SET DEFAULT 'INFO';
+
 -- 7.1 api_profiles: health / quota / usage tracking (proposal §10, §13)
 ALTER TABLE api_profiles ADD COLUMN IF NOT EXISTS request_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE api_profiles ADD COLUMN IF NOT EXISTS success_count INTEGER NOT NULL DEFAULT 0;
